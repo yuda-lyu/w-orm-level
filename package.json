@@ -1,11 +1,11 @@
 {
   "name": "w-orm-level",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "dist/w-orm-level.umd.js",
   "dependencies": {
     "lodash-es": "^4.17.21",
     "level": "^10.0.0",
-    "mingo": "^6.5.6",
+    "mingo": "6.5.6",
     "wsemi": "^1.7.89"
   },
   "devDependencies": {
