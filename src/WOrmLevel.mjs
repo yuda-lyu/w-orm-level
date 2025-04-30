@@ -11,7 +11,6 @@ import isestr from 'wsemi/src/isestr.mjs'
 import isarr from 'wsemi/src/isarr.mjs'
 import isearr from 'wsemi/src/isearr.mjs'
 import iseobj from 'wsemi/src/iseobj.mjs'
-import isWindow from 'wsemi/src/isWindow.mjs'
 import haskey from 'wsemi/src/haskey.mjs'
 import evem from 'wsemi/src/evem.mjs'
 import genID from 'wsemi/src/genID.mjs'
@@ -50,17 +49,6 @@ function WOrmLevel(opt = {}) {
 
     //storage
     let storage = `${url}/${db}/${cl}`
-
-    let isNodejs = !isWindow()
-    if (isNodejs) {
-        import('fs')
-            .then((fs) => {
-                fs.mkdirSync(storage, { recursive: true }) //不存在則自動建立
-            })
-            .catch((err) => {
-                console.log(err)
-            })
-    }
 
     //client
     let client = new Level(storage, { valueEncoding: 'json' })
