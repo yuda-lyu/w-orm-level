@@ -1,5 +1,5 @@
 import { Level } from 'level'
-import { Query } from 'mingo' //須指定安裝6.5.6, 若6.6.0無法匯入Query
+import { Query } from 'mingo'
 import size from 'lodash-es/size.js'
 import get from 'lodash-es/get.js'
 import each from 'lodash-es/each.js'
@@ -108,7 +108,6 @@ function WOrmLevel(opt = {}) {
      * @returns {Promise} 回傳Promise，resolve回傳數據，reject回傳錯誤訊息
      */
     async function select(find = {}) {
-        console.log(storage, 'select', find)
         let isErr = false
         let res = null
 
@@ -300,6 +299,7 @@ function WOrmLevel(opt = {}) {
                         //內容不同須更新
 
                         //merge and put
+                        console.log(`merge(vv, v)`, merge(vv, v))
                         await client.put(v.id, merge(vv, v))
 
                         rest = { update: true }
@@ -324,6 +324,7 @@ function WOrmLevel(opt = {}) {
 
                 //autoInsert
                 if (autoInsert && rest.n === 0) {
+                    console.log('insert(v)', v)
                     rest = await insert(v)
                 }
 

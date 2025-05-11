@@ -19,9 +19,10 @@ npm i w-orm-level
 #### Example for collection
 > **Link:** [[dev source code](https://github.com/yuda-lyu/w-orm-level/blob/master/g-basic.mjs)]
 ```alias
+import _ from 'lodash-es'
+// import w from 'wsemi'
 import WOrm from './src/WOrmLevel.mjs'
 //import WOrm from './dist/w-orm-level.umd.js'
-// import w from 'wsemi'
 
 // w.fsDeleteFolder('./_db')
 
@@ -103,6 +104,7 @@ async function test() {
 
     //select all
     let ss = await wo.select()
+    ss = _.sortBy(ss, 'name')
     console.log('select all', ss)
 
     //select
@@ -119,6 +121,7 @@ async function test() {
 
     //select by $or, $and, $ne, $in, $nin
     let spc = await wo.select({ '$or': [{ '$and': [{ value: { '$ne': 123 } }, { value: { '$in': [123, 321, 123.456, 456] } }, { value: { '$nin': [456, 654] } }] }, { '$or': [{ value: { '$lte': -1 } }, { value: { '$gte': 400 } }] }] })
+    spc = _.sortBy(spc, 'name')
     console.log('select by $or, $and, $ne, $in, $nin', spc)
 
     // //select by regex //mingo不支援regex
@@ -150,13 +153,13 @@ test()
 //   { n: 0, nModified: 0, ok: 1 }
 // ]
 // select all [
-//   { id: 'id-peter', name: 'peter(modify)', value: 123 },
-//   { id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 },
 //   {
 //     id: {random id},
 //     name: 'kettle',
 //     value: 456
-//   }
+//   },
+//   { id: 'id-peter', name: 'peter(modify)', value: 123 },
+//   { id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 }
 // ]
 // select [ { id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 } ]
 // select by $and, $gt, $lt [ { id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 } ]
@@ -169,14 +172,14 @@ test()
 // ]
 // select by $or, $and, $ne, $in, $nin [
 //   {
-//     id: 'id-rosemary',
-//     name: 'rosemary(modify)',
-//     value: 123.456
-//   },
-//   {
 //     id: {random id},
 //     name: 'kettle',
 //     value: 456
+//   },
+//   {
+//     id: 'id-rosemary',
+//     name: 'rosemary(modify)',
+//     value: 123.456
 //   }
 // ]
 // change del
