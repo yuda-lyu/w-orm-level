@@ -299,7 +299,6 @@ function WOrmLevel(opt = {}) {
                         //內容不同須更新
 
                         //merge and put
-                        console.log(`merge(vv, v)`, merge(vv, v))
                         await client.put(v.id, merge(vv, v))
 
                         rest = { update: true }
