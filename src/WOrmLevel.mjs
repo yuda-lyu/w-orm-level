@@ -15,6 +15,7 @@ import haskey from 'wsemi/src/haskey.mjs'
 import evem from 'wsemi/src/evem.mjs'
 import genID from 'wsemi/src/genID.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
+import waitFun from 'wsemi/src/waitFun.mjs'
 
 
 /**
@@ -22,7 +23,7 @@ import pmSeries from 'wsemi/src/pmSeries.mjs'
  *
  * @class
  * @param {Object} [opt={}] 輸入設定物件，預設{}
- * @param {String} [opt.url='level://127.0.0.1:5432'] 輸入連接資料庫字串，預設'level://127.0.0.1:5432'
+ * @param {String} [opt.url='_db'] 輸入資料庫用資料夾字串，預設'_db'
  * @param {String} [opt.db='worm'] 輸入使用資料庫名稱字串，預設'worm'
  * @param {String} [opt.cl='test'] 輸入使用資料表名稱字串，預設'test'
  * @returns {Object} 回傳操作資料庫物件，各事件功能詳見說明
@@ -49,6 +50,7 @@ function WOrmLevel(opt = {}) {
 
     //storage
     let storage = `${url}/${db}/${cl}`
+    // console.log('storage',storage)
 
     //client
     let client = new Level(storage, { valueEncoding: 'json' })
@@ -58,9 +60,25 @@ function WOrmLevel(opt = {}) {
 
     //getData
     let getData = async() => {
+        let errTemp = null
+
+        //waitFun
+        await waitFun(() => {
+            if (client.status === 'closed') {
+                console.log(`client.status[${client.status}], level is closed`)
+            }
+            return client.status === 'open'
+        })
+
+        // console.log('client.status',client.status)
         let ltdt = []
         for await (let [, dt] of client.iterator()) {
+            // console.log('dt',dt)
             ltdt.push(dt)
+        }
+
+        if (errTemp !== null) {
+            return Promise.reject(errTemp)
         }
         return ltdt
     }
@@ -90,6 +108,7 @@ function WOrmLevel(opt = {}) {
      * @returns {Promise} 回傳Promise，resolve回傳數據，reject回傳錯誤訊息
      */
     async function select(find = {}) {
+        console.log(storage, 'select', find)
         let isErr = false
         let res = null
 
@@ -97,6 +116,7 @@ function WOrmLevel(opt = {}) {
 
             //ltdt
             let ltdt = await getData()
+            // console.log('select ltdt',ltdt)
 
             //filter
             if (iseobj(find)) {
@@ -107,7 +127,7 @@ function WOrmLevel(opt = {}) {
 
                 //find
                 res = q.find(ltdt).all()
-                // console.log('res', res)
+                // console.log('select(find) ltdt',res)
 
             }
             else {
@@ -182,6 +202,7 @@ function WOrmLevel(opt = {}) {
 
                 //查找資料表內v.id
                 let vv = await getValue(v.id) //不會有catch
+                // console.log('getValue',vv)
 
                 //check
                 if (!iseobj(vv)) {
