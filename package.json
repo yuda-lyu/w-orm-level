@@ -1,15 +1,15 @@
 {
   "name": "w-orm-level",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "main": "dist/w-orm-level.umd.js",
   "dependencies": {
     "lodash-es": "^4.17.21",
     "level": "^10.0.0",
-    "mingo": "6.5.6",
-    "wsemi": "^1.7.89"
+    "mingo": "^6.6.1",
+    "wsemi": "^1.7.90"
   },
   "devDependencies": {
-    "w-package-tools": "^1.0.87"
+    "w-package-tools": "^1.0.90"
   },
   "scripts": {
     "test": "mocha --parallel --timeout 60000",
