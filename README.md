@@ -12,10 +12,12 @@ An operator for level in nodejs.
 To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-orm-level/WOrm.html).
 
 ## Installation
+
 ### Using npm(ES6 module):
 ```alias
 npm i w-orm-level
 ```
+
 #### Example for collection
 > **Link:** [[dev source code](https://github.com/yuda-lyu/w-orm-level/blob/master/g-basic.mjs)]
 ```alias
