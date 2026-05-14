@@ -1,6 +1,6 @@
 {
   "name": "w-orm-level",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "main": "dist/w-orm-level.umd.js",
   "dependencies": {
     "lodash-es": "^4.18.1",
