@@ -1,6 +1,9 @@
 # w-orm-level
 An operator for level in nodejs.
 
+## 注意
+對 DB 目錄上 OS 層級為獨佔鎖(LOCK 檔,fcntl 寫鎖)。若有多個 process 嘗試開啟會直接拋錯。
+
 ![language](https://img.shields.io/badge/language-JavaScript-orange.svg) 
 [![npm version](http://img.shields.io/npm/v/w-orm-level.svg?style=flat)](https://npmjs.org/package/w-orm-level) 
 [![license](https://img.shields.io/npm/l/w-orm-level.svg?style=flat)](https://npmjs.org/package/w-orm-level) 

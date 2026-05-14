@@ -30,6 +30,9 @@ import waitFun from 'wsemi/src/waitFun.mjs'
  */
 function WOrmLevel(opt = {}) {
 
+    //_cache
+    let _cache = null
+
     //url
     let url = get(opt, 'url')
     if (!isestr(url)) {
@@ -60,6 +63,12 @@ function WOrmLevel(opt = {}) {
 
     //getData
     let getData = async() => {
+
+        //check
+        if (isarr(_cache)) {
+            return cloneDeep(_cache) //與外部使用數據脫勾
+        }
+
         let errTemp = null
 
         //waitFun
@@ -80,7 +89,11 @@ function WOrmLevel(opt = {}) {
         if (errTemp !== null) {
             return Promise.reject(errTemp)
         }
-        return ltdt
+
+        //update
+        _cache = ltdt
+
+        return cloneDeep(ltdt) //與外部使用數據脫勾
     }
 
     //getValue
@@ -225,18 +238,33 @@ function WOrmLevel(opt = {}) {
                 ok: 1,
             }
 
-            //emit
-            ee.emit('change', 'insert', data, res)
-
         }
         catch (err) {
             isErr = true
             res = err
         }
 
+        //update, 不能保證插入多少, 一律重設快取
+        _cache = null
+
+        //emit, 於change可能須使用select, 故須放在重設快取之後
+        if (!isErr) {
+            try {
+
+                //emit
+                ee.emit('change', 'insert', data, res)
+
+            }
+            catch (err) {
+                console.log(err)
+            }
+        }
+
+        //check
         if (isErr) {
             return Promise.reject(res)
         }
+
         return res
     }
 
@@ -330,18 +358,33 @@ function WOrmLevel(opt = {}) {
                 return rest
             })
 
-            //emit
-            ee.emit('change', 'save', data, res)
-
         }
         catch (err) {
             isErr = true
             res = err
         }
 
+        //update, 不能保證變更多少, 一律重設快取
+        _cache = null
+
+        //emit, 於change可能須使用select, 故須放在重設快取之後
+        if (!isErr) {
+            try {
+
+                //emit
+                ee.emit('change', 'save', data, res)
+
+            }
+            catch (err) {
+                console.log(err)
+            }
+        }
+
+        //check
         if (isErr) {
             return Promise.reject(res)
         }
+
         return res
     }
 
@@ -430,18 +473,33 @@ function WOrmLevel(opt = {}) {
                 return rest
             })
 
-            //emit
-            ee.emit('change', 'del', data, res)
-
         }
         catch (err) {
             isErr = true
             res = err
         }
 
+        //update, 不能保證刪除多少, 一律重設快取
+        _cache = null
+
+        //emit, 於change可能須使用select, 故須放在重設快取之後
+        if (!isErr) {
+            try {
+
+                //emit
+                ee.emit('change', 'del', data, res)
+
+            }
+            catch (err) {
+                console.log(err)
+            }
+        }
+
+        //check
         if (isErr) {
             return Promise.reject(res)
         }
+
         return res
     }
 
@@ -529,18 +587,33 @@ function WOrmLevel(opt = {}) {
                 ok: 1,
             }
 
-            //emit
-            ee.emit('change', 'delAll', null, res)
-
         }
         catch (err) {
             isErr = true
             res = err
         }
 
+        //update, 不能保證刪除多少, 一律重設快取
+        _cache = null
+
+        //emit, 於change可能須使用select, 故須放在重設快取之後
+        if (!isErr) {
+            try {
+
+                //emit
+                ee.emit('change', 'delAll', null, res)
+
+            }
+            catch (err) {
+                console.log(err)
+            }
+        }
+
+        //check
         if (isErr) {
             return Promise.reject(res)
         }
+
         return res
     }
 
