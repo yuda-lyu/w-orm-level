@@ -11,6 +11,7 @@ import isestr from 'wsemi/src/isestr.mjs'
 import isarr from 'wsemi/src/isarr.mjs'
 import isearr from 'wsemi/src/isearr.mjs'
 import iseobj from 'wsemi/src/iseobj.mjs'
+import isbol from 'wsemi/src/isbol.mjs'
 import haskey from 'wsemi/src/haskey.mjs'
 import evem from 'wsemi/src/evem.mjs'
 import genID from 'wsemi/src/genID.mjs'
@@ -26,6 +27,7 @@ import waitFun from 'wsemi/src/waitFun.mjs'
  * @param {String} [opt.url='_db'] 輸入資料庫用資料夾字串，預設'_db'
  * @param {String} [opt.db='worm'] 輸入使用資料庫名稱字串，預設'worm'
  * @param {String} [opt.cl='test'] 輸入使用資料表名稱字串，預設'test'
+ * @param {Boolean} [opt.useCache=false] 輸入是否使用select快取，適用於單程序操作，預設false
  * @returns {Object} 回傳操作資料庫物件，各事件功能詳見說明
  */
 function WOrmLevel(opt = {}) {
@@ -51,6 +53,12 @@ function WOrmLevel(opt = {}) {
         cl = 'test'
     }
 
+    //useCache
+    let useCache = get(opt, 'useCache')
+    if (!isbol(useCache)) {
+        useCache = false
+    }
+
     //storage
     let storage = `${url}/${db}/${cl}`
     // console.log('storage',storage)
@@ -65,11 +73,9 @@ function WOrmLevel(opt = {}) {
     let getData = async() => {
 
         //check
-        if (isarr(_cache)) {
+        if (useCache && isarr(_cache)) {
             return cloneDeep(_cache) //與外部使用數據脫勾
         }
-
-        let errTemp = null
 
         //waitFun
         await waitFun(() => {
@@ -86,14 +92,11 @@ function WOrmLevel(opt = {}) {
             ltdt.push(dt)
         }
 
-        if (errTemp !== null) {
-            return Promise.reject(errTemp)
+        if (useCache) {
+            _cache = ltdt
+            return cloneDeep(ltdt) //與外部使用數據脫勾
         }
-
-        //update
-        _cache = ltdt
-
-        return cloneDeep(ltdt) //與外部使用數據脫勾
+        return ltdt
     }
 
     //getValue
