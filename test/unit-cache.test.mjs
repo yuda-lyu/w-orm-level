@@ -100,7 +100,7 @@ describe('cache', function() {
 
         //save (更新rosemary, 觸發快取重設)
         rt = null
-        // vans[3] = [{ n: 1, nModified: 1, ok: 1 }]
+        // vans[3] = [{ n: 1, nInserted: 0, nModified: 1, ok: 1 }]
         await wo.save(rsm, { autoInsert: false })
             .then(function(msg) {
                 // console.log('save then', msg)
@@ -131,6 +131,20 @@ describe('cache', function() {
             })
         vget[4] = rt
 
+        //selectByPk不經快取而直讀資料庫, 故與select之結果一致
+        vget[5] = await wo.selectByPk('id-rosemary')
+
+        //delAll帶條件時亦不經快取, 故命中數與實際刪除數一致
+        vget[6] = await wo.delAll({ name: 'kettle' })
+        vget[7] = _.map(_.sortBy(await wo.select(), 'name'), 'name')
+
+        //close
+        await wo.close()
+
+    })
+
+    after(async function() {
+        w.fsDeleteFolder('./_db_cache')
     })
 
     vans[1] = [
@@ -151,7 +165,7 @@ describe('cache', function() {
         assert.strict.deepStrictEqual(vget[2], vans[2])
     })
 
-    vans[3] = [{ n: 1, nModified: 1, ok: 1 }]
+    vans[3] = [{ n: 1, nInserted: 0, nModified: 1, ok: 1 }]
     it(`should get ${JSON.stringify(vans[3])} for save (invalidate cache)`, async function() {
         assert.strict.deepStrictEqual(vget[3], vans[3])
     })
@@ -163,6 +177,21 @@ describe('cache', function() {
     ]
     it(`should get ${JSON.stringify(vans[4])} for select all (3rd, reload after save)`, async function() {
         assert.strict.deepStrictEqual(vget[4], vans[4])
+    })
+
+    vans[5] = { id: 'id-rosemary', name: 'rosemary(modify)', value: 654.321 }
+    it(`should get ${JSON.stringify(vans[5])} for selectByPk with cache enabled`, async function() {
+        assert.strict.deepStrictEqual(vget[5], vans[5])
+    })
+
+    vans[6] = { n: 1, nDeleted: 1, ok: 1 }
+    it(`should get ${JSON.stringify(vans[6])} for delAll with cache enabled`, async function() {
+        assert.strict.deepStrictEqual(vget[6], vans[6])
+    })
+
+    vans[7] = ['peter', 'rosemary(modify)']
+    it(`should get ${JSON.stringify(vans[7])} for remaining rows after delAll`, async function() {
+        assert.strict.deepStrictEqual(vget[7], vans[7])
     })
 
 })

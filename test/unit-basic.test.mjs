@@ -110,17 +110,17 @@ describe('basic', function() {
         //save
         rt = null
         // vans[3] = [
-        //     { n: 1, nModified: 1, ok: 1 },
-        //     { n: 1, nModified: 1, ok: 1 },
-        //     { n: 0, nModified: 0, ok: 1 }
+        //     { n: 1, nInserted: 0, nModified: 1, ok: 1 },
+        //     { n: 1, nInserted: 0, nModified: 1, ok: 1 },
+        //     { n: 0, nInserted: 0, nModified: 0, ok: 1 }
         // ]
         await wo.save(rsm, { autoInsert: false })
             .then(function(msg) {
                 // console.log('save then', msg)
                 // save then [
-                //   { n: 1, nModified: 1, ok: 1 },
-                //   { n: 1, nModified: 1, ok: 1 },
-                //   { n: 0, nModified: 0, ok: 1 }
+                //   { n: 1, nInserted: 0, nModified: 1, ok: 1 },
+                //   { n: 1, nInserted: 0, nModified: 1, ok: 1 },
+                //   { n: 0, nInserted: 0, nModified: 0, ok: 1 }
                 // ]
                 rt = msg
             })
@@ -183,6 +183,23 @@ describe('basic', function() {
                 rt = msg.toString()
             })
         vget[5] = rt
+
+        //selectByPk, 內容須與select({主鍵})[0]相同
+        rt = null
+        await wo.selectByPk('id-rosemary')
+            .then(function(msg) {
+                rt = msg
+            })
+            .catch(function(msg) {
+                rt = msg.toString()
+            })
+        vget[12] = rt
+
+        //selectByPk, 主鍵未命中回null
+        vget[13] = await wo.selectByPk('id-none')
+
+        //select, 無符合數據回空陣列
+        vget[14] = await wo.select({ id: 'id-none' })
 
         //select by $and, $gt, $lt
         rt = null
@@ -251,14 +268,14 @@ describe('basic', function() {
                 msg = _.sortBy(msg, 'name')
                 // select by $or, $and, $ne, $in, $nin [
                 //   {
-                //     id: 'id-rosemary',
-                //     name: 'rosemary(modify)',
-                //     value: 123.456
-                //   },
-                //   {
                 //     id: {random id},
                 //     name: 'kettle',
                 //     value: 456
+                //   },
+                //   {
+                //     id: 'id-rosemary',
+                //     name: 'rosemary(modify)',
+                //     value: 123.456
                 //   }
                 // ]
                 rt = [
@@ -292,11 +309,11 @@ describe('basic', function() {
 
         //save
         rt = null
-        // vans[10] = [{ n: 1, nModified: 1, ok: 1 }]
+        // vans[10] = [{ n: 1, nInserted: 0, nModified: 1, ok: 1 }]
         await wo.save(rsa, { autoInsert: true })
             .then(function(msg) {
                 // console.log('save then', msg)
-                // save then [ { n: 1, nModified: 1, ok: 1 } ]
+                // save then [ { n: 1, nInserted: 0, nModified: 1, ok: 1 } ]
                 rt = msg
             })
             .catch(function(msg) {
@@ -324,6 +341,13 @@ describe('basic', function() {
             })
         vget[11] = rt
 
+        //close, level對資料庫目錄為獨佔鎖, 用畢須關閉方能釋放
+        await wo.close()
+
+    })
+
+    after(async function() {
+        w.fsDeleteFolder('./_db')
     })
 
     vans[1] = {
@@ -340,9 +364,9 @@ describe('basic', function() {
     })
 
     vans[3] = [
-        { n: 1, nModified: 1, ok: 1 },
-        { n: 1, nModified: 1, ok: 1 },
-        { n: 0, nModified: 0, ok: 1 }
+        { n: 1, nInserted: 0, nModified: 1, ok: 1 },
+        { n: 1, nInserted: 0, nModified: 1, ok: 1 },
+        { n: 0, nInserted: 0, nModified: 0, ok: 1 }
     ]
     it(`should get ${JSON.stringify(vans[3])} for save(autoInsert=false)`, async function() {
         assert.strict.deepStrictEqual(vget[3], vans[3])
@@ -364,6 +388,22 @@ describe('basic', function() {
     vans[5] = [{ id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 }]
     it(`should get ${JSON.stringify(vans[5])} for select`, async function() {
         assert.strict.deepStrictEqual(vget[5], vans[5])
+    })
+
+    //vans[12]、vans[13]、vans[14]為後續新增之selectByPk與select無命中, 為不更動既有編號故接續於末號之後
+    vans[12] = { id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 }
+    it(`should get ${JSON.stringify(vans[12])} for selectByPk`, async function() {
+        assert.strict.deepStrictEqual(vget[12], vans[12])
+    })
+
+    vans[13] = null
+    it(`should get ${JSON.stringify(vans[13])} for selectByPk by pk not existed`, async function() {
+        assert.strict.deepStrictEqual(vget[13], vans[13])
+    })
+
+    vans[14] = []
+    it(`should get ${JSON.stringify(vans[14])} for select without matched data`, async function() {
+        assert.strict.deepStrictEqual(vget[14], vans[14])
     })
 
     vans[6] = [{ id: 'id-rosemary', name: 'rosemary(modify)', value: 123.456 }]
@@ -403,7 +443,7 @@ describe('basic', function() {
     //     assert.strict.deepStrictEqual(vget[9], vans[9])
     // })
 
-    vans[10] = [{ n: 1, nModified: 1, ok: 1 }]
+    vans[10] = [{ n: 1, nInserted: 0, nModified: 1, ok: 1 }]
     it(`should get ${JSON.stringify(vans[10])} for save(autoInsert=true)`, async function() {
         assert.strict.deepStrictEqual(vget[10], vans[10])
     })

@@ -14,7 +14,7 @@ import iseobj from 'wsemi/src/iseobj.mjs'
 import isbol from 'wsemi/src/isbol.mjs'
 import haskey from 'wsemi/src/haskey.mjs'
 import evem from 'wsemi/src/evem.mjs'
-import genID from 'wsemi/src/genID.mjs'
+import genIDSeq from 'wsemi/src/genIDSeq.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
 import waitFun from 'wsemi/src/waitFun.mjs'
 
@@ -22,12 +22,36 @@ import waitFun from 'wsemi/src/waitFun.mjs'
 /**
  * 操作資料庫(Level)
  *
+ * 回傳物件為EventEmitter，除各操作函數外另發出change與error兩事件，供呼叫端於單一處集中觀察資料異動與失敗。
+ * 事件僅為附加通知，其所送出之資訊皆另有正規管道(操作結果經resolve、整批性錯誤經reject、逐筆失敗經該筆之err欄位)，
+ * 故不監聽亦能取得完整資訊，且監聽與否不改變任何操作之回傳值。
+ *
+ * change事件，參數為(mode, data, res)，於資料實際異動成功後發出：
+ * mode為操作別字串，可為'insert'、'insertBulk'、'save'、'del'、'delAll'；save內若逐筆走自動插入則該筆另發出mode為'insert'之事件。
+ * data為本次操作之輸入數據，delAll固定為null。
+ * res為本次操作之回傳結果。
+ * 逐筆函數以整批為單位發出一次而不逐筆發出，select與selectByPk不發出本事件。
+ *
+ * error事件，參數為(mode, data, err)，於操作發生錯誤時發出：
+ * mode為操作別字串，可為'select'、'selectByPk'、'insert'、'insertBulk'、'save'、'del'、'delAll'。
+ * data為本次操作之輸入數據，無輸入數據者為null。
+ * err為錯誤訊息字串，內容與正規管道所送出者一致。
+ * 整批性錯誤於reject之前發出；逐筆失敗於該筆結果定案後發出，每筆一次。
+ * 註: 逐筆失敗時整批仍resolve，故收到本事件不表示該次呼叫失敗；正常結果(如查無數據、主鍵未命中、全數已存在)不發出本事件。
+ *
+ * 註: 本套件之主鍵欄位固定為id，尚未支援指定其他欄位為主鍵。
+ * 註: level無條件寫入、無比較並交換亦無交易，故insert之[檢查主鍵不存在與寫入]與save之[查找主鍵與更新或插入]，
+ * 其原子性由本套件之序列化佇列提供；而LevelDB對資料庫目錄為OS層之獨佔鎖，
+ * 同一目錄無從由第二個實例或第二個行程開啟，故行程內序列化即等同全域互斥，詳見README之併發保證宣告。
+ * 註: 因獨佔鎖之故，用畢須以close()釋放，否則同目錄無法再被開啟。
+ *
  * @class
  * @param {Object} [opt={}] 輸入設定物件，預設{}
- * @param {String} [opt.url='_db'] 輸入資料庫用資料夾字串，預設'_db'
+ * @param {String} [opt.url='./_db'] 輸入資料庫用資料夾字串，預設'./_db'
  * @param {String} [opt.db='worm'] 輸入使用資料庫名稱字串，預設'worm'
  * @param {String} [opt.cl='test'] 輸入使用資料表名稱字串，預設'test'
  * @param {Boolean} [opt.useCache=false] 輸入是否使用select快取，適用於單程序操作，預設false
+ * @param {Boolean} [opt.autoGenPk=true] 輸入insert、insertBulk與save於數據未帶有效主鍵(本套件為id欄位)時是否自動產生主鍵值，預設true；給false代表主鍵改由呼叫端自備，套件不產生亦不檢查其唯一性與格式，未帶有效主鍵者將reject
  * @returns {Object} 回傳操作資料庫物件，各事件功能詳見說明
  */
 function WOrmLevel(opt = {}) {
@@ -59,6 +83,13 @@ function WOrmLevel(opt = {}) {
         useCache = false
     }
 
+    //autoGenPk, 主鍵由誰產生為整個資料表之政策, 故為建構層設定, 不可於各寫入函數之option逐次覆寫,
+    //否則同一資料表將混入兩種來源之主鍵而難以追溯
+    let autoGenPk = get(opt, 'autoGenPk')
+    if (!isbol(autoGenPk)) {
+        autoGenPk = true
+    }
+
     //storage
     let storage = `${url}/${db}/${cl}`
     // console.log('storage',storage)
@@ -67,7 +98,132 @@ function WOrmLevel(opt = {}) {
     let client = new Level(storage, { valueEncoding: 'json' })
 
     //ee
-    let ee = evem()
+    let ee = evem() //採eventemitter3, 其於'error'無監聽者時僅回傳false而不拋出, 故操作行為不因監聽者之有無而改變
+
+    //gqueue, 本實例之序列化佇列, 詳見下方serialize說明
+    let gqueue = Promise.resolve()
+
+    /**
+     * 序列化本實例之操作
+     *
+     * level無條件寫入、無比較並交換亦無交易，故insert之[檢查主鍵不存在與寫入]與save之[查找主鍵與更新或插入]，
+     * 其原子性只能由序列化達成。採Promise鏈而非[布林旗標配合輪詢等待]，係因後者之[檢查旗標]與[設定旗標]之間隔有await，
+     * 並非原子之test-and-set，多個等候者之輪詢若落在同一批timer觸發即會同時進入臨界區；
+     * 且輪詢函數逾時後為resolve而非reject，等滿即照樣放行。Promise鏈為嚴格FIFO且無逾時放行，由結構保證互斥。
+     * select亦納入序列化，令其不致與寫入之批次替換交錯。
+     *
+     * 註: 佇列掛於實例層即足夠。LevelDB對資料庫目錄為OS層之獨佔鎖，同一目錄無從由第二個實例或第二個行程開啟
+     * (實測後開者一律以LEVEL_DATABASE_NOT_OPEN失敗)，故本佇列所涵蓋者即為該目錄之全部操作。
+     */
+    let serialize = (fn) => {
+
+        //pmPrev, 恆為已攔截錯誤之Promise, 故前一次操作失敗不會中斷佇列
+        let pmPrev = gqueue
+
+        //pm
+        let pm = pmPrev.then(() => {
+            return fn()
+        })
+
+        //update, 存入已攔截錯誤者, 避免本次reject成為unhandled
+        gqueue = pm.catch(() => {})
+
+        return pm
+    }
+
+    //waitOpen, 等待client開啟, 因get、getMany、iterator、batch於client未開啟時會拋錯
+    //closed為終態: 已關閉或開啟失敗(如目錄被其他行程鎖住)之client不會自行回到open, 續等必然逾時,
+    //故等待條件納入終態並於等待後複檢, 令開啟失敗者於數百毫秒內失敗而非空轉至逾時
+    //各函數入口已有procClosed守門, 此處為縱深防禦, 攔[操作進行中被close]之競態
+    let waitOpen = async () => {
+        await waitFun(() => {
+            return client.status === 'open' || client.status === 'closed'
+        }, { attemptNum: 50, timeInterval: 200 })
+        if (client.status !== 'open') {
+            throw new Error(`client is closed, instance can not be used after close() or failed to open`)
+        }
+    }
+
+    //procClosed, 各函數入口之終態守門: close()後再操作屬整批性錯誤, 立即reject令誤用當場可見
+    //不可靜默回正常空值(如null或未命中), 否則[已關閉]與[查無資料]同形,
+    //去重類呼叫端將把每筆判為未存在而fail-open, 整批重送下游昂貴動作
+    let procClosed = (mode, data) => {
+        let msg = `can not ${mode} by closed client, instance can not be used after close()`
+        emitError(mode, data, msg)
+        return Promise.reject(new Error(msg))
+    }
+
+    //isClosed, 判定client是否已為終態
+    let isClosed = () => {
+        return client.status === 'closed' || client.status === 'closing'
+    }
+
+    //emitChange, 資料實際異動成功後發出, 事件僅為附加通知不承擔回傳義務
+    //一律包try/catch, 令訂閱函數自身拋錯不影響本次操作之結果
+    let emitChange = (mode, data, res) => {
+        try {
+            ee.emit('change', mode, data, res)
+        }
+        catch (err) {
+            console.log(err)
+        }
+    }
+
+    //emitError, 操作發生錯誤時發出, 錯誤訊息一律轉為字串
+    let emitError = (mode, data, err) => {
+        try {
+            ee.emit('error', mode, data, getErrMsg(err))
+        }
+        catch (errEmit) {
+            console.log(errEmit)
+        }
+    }
+
+    //getErrMsg, 取錯誤訊息字串, 供逐筆結果之err欄位與error事件使用
+    let getErrMsg = (err) => {
+        let m = get(err, 'message')
+        if (isestr(m)) {
+            return m
+        }
+        return String(err)
+    }
+
+    //procPk, 依autoGenPk處理各數據之主鍵, 供insert、insertBulk與save共用
+    //autoGenPk為true時補值; 為false時不補值, 未帶有效主鍵者屬呼叫端未履行契約, 拋出為整批性錯誤,
+    //且檢查於任何寫入之前完成, 故不會有部份筆數已寫入而整批失敗之情形
+    let procPk = (data, fnName) => {
+        if (autoGenPk) {
+            return map(data, function(v) {
+                if (!isestr(get(v, 'id'))) {
+                    v.id = genIDSeq()
+                }
+                return v
+            })
+        }
+        each(data, function(v, k) {
+            if (!isestr(get(v, 'id'))) {
+                throw new Error(`can not ${fnName} by data[${k}] without valid id when autoGenPk is false`)
+            }
+        })
+        return data
+    }
+
+    //getKpValues, 一次取回各主鍵之現值, 回傳[主鍵值 => 現值]之對照表, 未命中者不收錄
+    //供insert、insertBulk、save、del共用, 令[既有數據之認定]於各函數一致(皆以id為鍵直讀)
+    let getKpValues = async(ids) => {
+        let kp = {}
+        if (size(ids) === 0) {
+            return kp
+        }
+        let vs = await client.getMany(ids)
+        each(ids, (id, k) => {
+            let v = vs[k]
+            if (v !== undefined) {
+                kp[id] = v
+            }
+        })
+        return kp
+    }
 
     //getData
     let getData = async() => {
@@ -77,13 +233,8 @@ function WOrmLevel(opt = {}) {
             return cloneDeep(_cache) //與外部使用數據脫勾
         }
 
-        //waitFun
-        await waitFun(() => {
-            if (client.status === 'closed') {
-                console.log(`client.status[${client.status}], level is closed`)
-            }
-            return client.status === 'open'
-        })
+        //waitOpen
+        await waitOpen()
 
         // console.log('client.status',client.status)
         let ltdt = []
@@ -99,31 +250,14 @@ function WOrmLevel(opt = {}) {
         return ltdt
     }
 
-    //getValue
-    let getValue = async (key) => {
-        let value = null
-        try {
-            value = await client.get(key)
-        }
-        catch (err) {
-            // if (err.notFound) {
-            //     console.log('資料不存在')
-            // }
-            // else {
-            //     console.log('其他錯誤:', err)
-            // }
-        }
-        return value
-    }
-
     /**
      * 查詢數據
      *
      * @memberOf WOrmLevel
      * @param {Object} [find={}] 輸入查詢條件物件
-     * @returns {Promise} 回傳Promise，resolve回傳數據，reject回傳錯誤訊息
+     * @returns {Promise} 回傳Promise，resolve回傳數據陣列，無符合數據回傳空陣列，reject回傳錯誤訊息
      */
-    async function select(find = {}) {
+    async function selectCore(find = {}) {
         let isErr = false
         let res = null
 
@@ -152,7 +286,7 @@ function WOrmLevel(opt = {}) {
             //check
             if (!isarr(res)) {
                 isErr = true
-                res = `can not select by find[${JSON.stringify(find)}]`
+                res = new Error(`can not select by find[${JSON.stringify(find)}]`)
             }
 
         }
@@ -164,20 +298,239 @@ function WOrmLevel(opt = {}) {
 
         //check
         if (isErr) {
+
+            //emit, 整批性錯誤須於reject之前發出
+            emitError('select', null, res)
+
             return Promise.reject(res)
         }
 
         return res
     }
+    async function select(find = {}) {
+
+        //check client, closed為終態, 於任何檢查與讀取之前先行攔下(T4: 實例已關閉屬整批性錯誤)
+        if (isClosed()) {
+            return procClosed('select', null)
+        }
+
+        return serialize(() => selectCore(find))
+    }
 
     /**
-     * 插入數據
+     * 由主鍵查詢單筆數據，因直接由level取值，不需如select提取全表數據再過濾，故數據量大時效能較佳
+     * 註: 本套件之主鍵欄位固定為id，尚未支援指定其他欄位為主鍵
+     *
+     * @memberOf WOrmLevel
+     * @param {String} pk 輸入主鍵值字串，本套件之主鍵欄位為id
+     * @returns {Promise} 回傳Promise，resolve回傳數據物件，若無此主鍵或主鍵值無效則回傳null，reject回傳錯誤訊息
+     */
+    async function selectByPkCore(pk) {
+        let isErr = false
+
+        //res
+        let res = null
+        try {
+
+            //check
+            if (!isestr(pk)) {
+                //未給有效主鍵值視為查無數據
+                return null
+            }
+
+            //waitOpen
+            await waitOpen()
+
+            //查找資料表內pk, 判定基準與insert、insertBulk、save、del內對既有數據之認定一致(皆以id為鍵直讀)
+            let v = await client.get(pk)
+
+            //check
+            if (iseobj(v)) {
+                res = v
+            }
+            else {
+                //不存在此主鍵, 回傳null
+                res = null
+            }
+
+        }
+        catch (err) {
+            isErr = true
+            res = err
+        }
+
+        //check
+        if (isErr) {
+
+            //emit, 整批性錯誤須於reject之前發出
+            emitError('selectByPk', null, res)
+
+            return Promise.reject(res)
+        }
+
+        return res
+    }
+    async function selectByPk(pk) {
+
+        //check client, 守門須置於[主鍵值無效回null]之判定之前, 否則[已關閉]與[查無資料]同形
+        if (isClosed()) {
+            return procClosed('selectByPk', null)
+        }
+
+        return serialize(() => selectByPkCore(pk))
+    }
+
+    /**
+     * 插入數據，僅於主鍵不存在時寫入，已存在者跳過且不覆寫
      *
      * @memberOf WOrmLevel
      * @param {Object|Array} data 輸入數據物件或陣列
-     * @returns {Promise} 回傳Promise，resolve回傳插入結果，reject回傳錯誤訊息
+     * @param {Object} [option={}] 輸入設定物件，預設為{}
+     * @param {Boolean} [option.returnList=false] 輸入是否改回傳逐筆結果布林值，預設false。給true時回傳與輸入等長保序之陣列，各筆為{n,nInserted,ok}，nInserted為1即該筆為新增；聚合計數只回答有幾筆是新的，逐筆結果方能回答是哪幾筆，供下游僅對新資料執行昂貴動作。回傳形式由呼叫點靜態決定，共用之結果處理程式碼不可跨不同取值之呼叫點混用
+     * @returns {Promise} 回傳Promise，resolve依returnList回傳插入結果：預設回傳聚合物件{n,nInserted,ok}，n為輸入筆數、nInserted為實際插入筆數；returnList為true時回傳逐筆陣列，各筆n恆為1(主鍵命中或經插入)、ok恆為1(insert之錯誤皆屬整批性而reject，不進逐筆)；reject回傳錯誤訊息
      */
-    async function insert(data) {
+    async function insertCore(data, option = {}) {
+        let isErr = false
+
+        //returnList
+        let returnList = get(option, 'returnList')
+        if (!isbol(returnList)) {
+            returnList = false
+        }
+
+        //check
+        if (!iseobj(data) && !isearr(data)) {
+            if (returnList) {
+                //輸入無效, 對齊save與del之空陣列規定
+                return []
+            }
+            return {
+                n: 0,
+                nInserted: 0,
+                ok: 1,
+            }
+        }
+
+        //cloneDeep, 與外部數據脫勾
+        data = cloneDeep(data)
+
+        //res
+        let res = null
+        try {
+
+            //check
+            if (!isarr(data)) {
+                data = [data]
+            }
+
+            //check id
+            data = procPk(data, 'insert')
+
+            //waitOpen
+            await waitOpen()
+
+            //kp, 一次取回各主鍵之現值
+            let kp = await getKpValues(map(data, 'id'))
+
+            //each
+            let nAll = size(data)
+            let ltdone = []
+            let ops = []
+            each(data, (v) => {
+
+                //check
+                if (!haskey(kp, v.id)) {
+                    //未存在v.id
+
+                    //push
+                    ops.push({ type: 'put', key: v.id, value: v })
+
+                    //update, 須同步更新kp, 否則同批含重複主鍵者會全數寫入而僅存最末筆
+                    kp[v.id] = v
+
+                    ltdone.push(true)
+                }
+                else {
+                    //已存在v.id(含同批重複之非首筆)則不寫入
+                    ltdone.push(false)
+                }
+
+            })
+
+            //write, 未有須插入者即不寫入, 全數已存在屬正常結果
+            //batch為LevelDB之WriteBatch, 各筆之[檢查主鍵不存在]已於本臨界區內完成, 與寫入不會被他者交錯
+            if (size(ops) > 0) {
+                await client.batch(ops)
+            }
+
+            //res
+            if (returnList) {
+                //逐筆結果, 與輸入等長保序, 元素沿用逐筆結果之家族形狀(同save與del之元素)
+                //n恆為1(主鍵命中既有或經插入而產生), ok恆為1(insert之錯誤皆屬整批性而reject, 不進逐筆),
+                //資訊由nInserted承載, filter(v=>v.nInserted===1)之長度必等於聚合模式之nInserted
+                res = map(ltdone, function(done) {
+                    return {
+                        n: 1,
+                        nInserted: done ? 1 : 0,
+                        ok: 1,
+                    }
+                })
+            }
+            else {
+                res = {
+                    n: nAll,
+                    nInserted: size(ops),
+                    ok: 1,
+                }
+            }
+
+        }
+        catch (err) {
+            isErr = true
+            res = err
+        }
+
+        //update, 不能保證插入多少, 一律重設快取
+        _cache = null
+
+        //emit, 於change可能須使用select, 故須放在重設快取之後
+        if (!isErr) {
+            emitChange('insert', data, res)
+        }
+
+        //check
+        if (isErr) {
+
+            //emit, 整批性錯誤須於reject之前發出
+            emitError('insert', data, res)
+
+            return Promise.reject(res)
+        }
+
+        return res
+    }
+    async function insert(data, option = {}) {
+
+        //check client, closed為終態, 於任何檢查與寫入之前先行攔下(T4: 實例已關閉屬整批性錯誤)
+        if (isClosed()) {
+            return procClosed('insert', data)
+        }
+
+        return serialize(() => insertCore(data, option))
+    }
+
+    /**
+     * 批次插入數據，全批視為一個單位，全部插入成功或一筆都不寫入
+     * 註: 本函數非insert之加速版，兩者衝突政策不同。insert於主鍵已存在時跳過該筆而整批ok為1，
+     * 本函數則整批reject且不寫入任何一筆；同批含重複主鍵者亦視為衝突。確無衝突時兩者結果相同
+     * 註: 於本套件不會較insert快，因兩者皆為一次批次取值與一次批次寫入，
+     * 提供本函數係為與其他w-orm系列套件維持同一組函數，令呼叫端得於各套件間替換而不須改寫呼叫
+     *
+     * @memberOf WOrmLevel
+     * @param {Object|Array} data 輸入數據物件或陣列
+     * @returns {Promise} 回傳Promise，resolve回傳插入結果物件{n,nInserted,ok}，n為輸入筆數、nInserted成功時恆等於n，任一筆主鍵已存在則reject回傳錯誤訊息
+     */
+    async function insertBulkCore(data) {
         let isErr = false
 
         //check
@@ -202,42 +555,43 @@ function WOrmLevel(opt = {}) {
             }
 
             //check id
-            data = map(data, function(v) {
-                if (!isestr(v.id)) {
-                    v.id = genID()
+            data = procPk(data, 'insertBulk')
+
+            //waitOpen
+            await waitOpen()
+
+            //kp, 一次取回各主鍵之現值
+            let kp = await getKpValues(map(data, 'id'))
+
+            //nAll
+            let nAll = size(data)
+
+            //check, 主鍵檢查於任何寫入之前一次完成, 任一筆衝突即整批中止,
+            //同批含重複主鍵者亦於此被偵測為衝突(kp隨檢查同步更新)
+            let pkConflict = null
+            each(data, (v) => {
+                if (haskey(kp, v.id)) {
+                    pkConflict = v.id
+                    return false //中止each
                 }
-                return v
+                kp[v.id] = v
             })
 
-            //each
-            let nAll = size(data)
-            let nPush = 0
-            for (let v of data) {
-                // console.log(v)
-
-                //查找資料表內v.id
-                let vv = await getValue(v.id) //不會有catch
-                // console.log('getValue',vv)
-
-                //check
-                if (!iseobj(vv)) {
-                    //未存在v.id
-
-                    //put
-                    await client.put(v.id, v)
-
-                    nPush++
-                }
-                else {
-                    //已存在v.id則不push
-                }
-
+            //check
+            if (pkConflict !== null) {
+                throw new Error(`can not insertBulk by existed id[${pkConflict}]`)
             }
 
-            //res
+            //write, 全部通過檢查方寫入, 且寫入為單次batch(LevelDB之WriteBatch為原子, 不會被拆為多次送出),
+            //故全有全無成立: 檢查失敗時尚未寫入任何一筆, 無須交易亦無須補償動作
+            await client.batch(map(data, function(v) {
+                return { type: 'put', key: v.id, value: v }
+            }))
+
+            //res, 未衝突則全數插入, 故nInserted恆等於n
             res = {
                 n: nAll,
-                nInserted: nPush,
+                nInserted: nAll,
                 ok: 1,
             }
 
@@ -252,35 +606,40 @@ function WOrmLevel(opt = {}) {
 
         //emit, 於change可能須使用select, 故須放在重設快取之後
         if (!isErr) {
-            try {
-
-                //emit
-                ee.emit('change', 'insert', data, res)
-
-            }
-            catch (err) {
-                console.log(err)
-            }
+            emitChange('insertBulk', data, res)
         }
 
         //check
         if (isErr) {
+
+            //emit, 整批性錯誤須於reject之前發出
+            emitError('insertBulk', data, res)
+
             return Promise.reject(res)
         }
 
         return res
     }
+    async function insertBulk(data) {
+
+        //check client, closed為終態, 於任何檢查與寫入之前先行攔下(T4: 實例已關閉屬整批性錯誤)
+        if (isClosed()) {
+            return procClosed('insertBulk', data)
+        }
+
+        return serialize(() => insertBulkCore(data))
+    }
 
     /**
-     * 儲存數據
+     * 儲存數據，以主鍵為準更新既有數據，未給之欄位保留；主鍵不存在且autoInsert為true時改為插入
      *
      * @memberOf WOrmLevel
      * @param {Object|Array} data 輸入數據物件或陣列
      * @param {Object} [option={}] 輸入設定物件，預設為{}
      * @param {boolean} [option.autoInsert=true] 輸入是否於儲存時發現原本無數據，則自動改以插入處理，預設為true
-     * @returns {Promise} 回傳Promise，resolve回傳儲存結果，reject回傳錯誤訊息
+     * @returns {Promise} 回傳Promise，resolve回傳與輸入等長之儲存結果陣列，各筆為{n,nInserted,nModified,ok}，n為主鍵命中筆數，單筆失敗者ok為0並附err，reject回傳錯誤訊息
      */
-    async function save(data, option = {}) {
+    async function saveCore(data, option = {}) {
         let isErr = false
 
         //check
@@ -304,71 +663,111 @@ function WOrmLevel(opt = {}) {
             }
 
             //check id
-            data = map(data, function(v) {
-                if (!isestr(v.id)) {
-                    v.id = genID()
-                }
-                return v
-            })
+            data = procPk(data, 'save')
+
+            //waitOpen
+            await waitOpen()
+
+            //kp, 一次取回各主鍵之現值, 隨逐筆處理同步更新, 令同批同主鍵之後筆得見前筆之結果
+            let kp = await getKpValues(map(data, 'id'))
 
             //pmSeries
+            let ops = []
             res = await pmSeries(data, async(v) => {
 
                 //rest
                 let rest = null
 
-                //查找資料表內v.id
-                let vv = await getValue(v.id) //不會有catch
+                try {
 
-                //existed
-                let existed = iseobj(vv)
+                    //查找資料表內v.id
+                    let existed = haskey(kp, v.id)
 
-                //check
-                if (existed) {
-                    //已存在v.id
-                    if (isEqual(v, vv)) {
-                        //內容相同不更新
+                    //check
+                    if (existed) {
+                        //已存在v.id
+
+                        //vv, 現值
+                        let vv = get(kp, v.id)
+
+                        //vm, 合併後之結果, 另建新物件以免污染原數據
+                        let vm = merge({}, vv, v)
+
+                        //判定基準為[合併後結果與現值相同], 而非[待寫入物件與現值全等],
+                        //令nModified忠實反映是否真的寫入, 僅給部份欄位且值皆相同者不應回報已修改
+                        if (isEqual(vm, vv)) {
+                            //合併後與現值相同不須寫入, 惟已命中v.id故n為1
+                            rest = {
+                                n: 1,
+                                nInserted: 0,
+                                nModified: 0,
+                                ok: 1,
+                            }
+                        }
+                        else {
+                            //合併後與現值不同須更新
+
+                            //update
+                            ops.push({ type: 'put', key: v.id, value: vm })
+                            kp[v.id] = vm
+
+                            rest = {
+                                n: 1,
+                                nInserted: 0,
+                                nModified: 1,
+                                ok: 1,
+                            }
+                        }
+
                     }
                     else {
-                        //內容不同須更新
+                        //不存在v.id, 若autoInsert則須插入
+                        if (autoInsert) {
 
-                        //merge and put
-                        await client.put(v.id, merge(vv, v))
+                            //push
+                            ops.push({ type: 'put', key: v.id, value: v })
+                            kp[v.id] = v
 
-                        rest = { update: true }
+                            rest = {
+                                n: 1,
+                                nInserted: 1,
+                                nModified: 0,
+                                ok: 1,
+                            }
+
+                        }
+                        else {
+                            //未命中且未開啟autoInsert, 未命中故n為0
+                            rest = {
+                                n: 0,
+                                nInserted: 0,
+                                nModified: 0,
+                                ok: 1,
+                            }
+                        }
                     }
-                }
-                else {
-                    //內容不存在
-                }
 
-                //rest
-                if (iseobj(rest)) {
+                }
+                catch (err) {
+
+                    //本筆失敗不中斷整批, 以ok為0並附err回報, 由呼叫端逐筆檢查
                     rest = {
                         n: 1,
-                        nModified: 1,
-                        ok: 1,
-                    }
-                }
-                else {
-                    rest = {
-                        n: 0,
+                        nInserted: 0,
                         nModified: 0,
-                        ok: 1,
+                        ok: 0,
+                        err: getErrMsg(err),
                     }
-                }
-                //rest.n === 0:
-                // 內容相同不更新, 不須update
-                // 內容不存在, 若autoInsert則須insert
 
-                //autoInsert
-                if (autoInsert && rest.n === 0 && !existed) {
-                    // console.log('insert(v)', v)
-                    rest = await insert(v)
                 }
 
                 return rest
             })
+
+            //write, 逐筆判定與寫入同於本臨界區內完成, 不會與他者交錯
+            if (size(ops) > 0) {
+                await client.batch(ops)
+            }
 
         }
         catch (err) {
@@ -381,33 +780,58 @@ function WOrmLevel(opt = {}) {
 
         //emit, 於change可能須使用select, 故須放在重設快取之後
         if (!isErr) {
-            try {
 
-                //emit
-                ee.emit('change', 'save', data, res)
+            //emit, 逐筆失敗於該筆結果定案後發出, 每筆一次
+            //此事件之發出不表示整批失敗, 整批仍resolve, 該筆以ok為0回報
+            each(res, (rest, k) => {
+                if (get(rest, 'ok') === 0) {
+                    emitError('save', [get(data, k)], get(rest, 'err'))
+                }
+            })
 
-            }
-            catch (err) {
-                console.log(err)
-            }
+            //emit, 逐筆插入另發出mode為insert之事件, 供呼叫端區辨新增與更新
+            //逐筆結果與輸入等長保序, 故由nInserted即可定位係哪幾筆走插入, 不須另行記錄
+            each(res, (rest, k) => {
+                if (get(rest, 'nInserted') === 1) {
+                    emitChange('insert', [get(data, k)], rest)
+                }
+            })
+
+            //emit, 逐筆失敗之error事件已於上方發出, 故必早於本整批change
+            emitChange('save', data, res)
+
         }
 
         //check
         if (isErr) {
+
+            //emit, 整批性錯誤須於reject之前發出
+            emitError('save', data, res)
+
             return Promise.reject(res)
         }
 
         return res
     }
+    async function save(data, option = {}) {
+
+        //check client, closed為終態, 於任何檢查與寫入之前先行攔下(T4: 實例已關閉屬整批性錯誤)
+        //不可降為逐筆ok:0之resolve, 否則呼叫端只看Promise是否reject即誤判整批成功
+        if (isClosed()) {
+            return procClosed('save', data)
+        }
+
+        return serialize(() => saveCore(data, option))
+    }
 
     /**
-     * 刪除數據
+     * 刪除數據，依主鍵刪除
      *
      * @memberOf WOrmLevel
      * @param {Object|Array} data 輸入數據物件或陣列
-     * @returns {Promise} 回傳Promise，resolve回傳刪除結果，reject回傳錯誤訊息
+     * @returns {Promise} 回傳Promise，resolve回傳與輸入等長之刪除結果陣列，各筆為{n,nDeleted,ok}，n為主鍵命中筆數，單筆失敗或未給有效id者ok為0並附err，reject回傳錯誤訊息
      */
-    async function del(data) {
+    async function delCore(data) {
         let isErr = false
 
         //check
@@ -427,63 +851,96 @@ function WOrmLevel(opt = {}) {
                 data = [data]
             }
 
+            //waitOpen
+            await waitOpen()
+
+            //ids, 僅取具有效主鍵值者, 不可將無效主鍵送進查詢(del不受autoGenPk影響, 於任一設定下皆不補值)
+            let ids = []
+            each(data, (v) => {
+                let id = get(v, 'id', '')
+                if (isestr(id)) {
+                    ids.push(id)
+                }
+            })
+
+            //kp, 一次取回各主鍵之現值
+            let kp = await getKpValues(ids)
+
             //pmSeries
+            let ops = []
             res = await pmSeries(data, async(v) => {
 
                 //rest
                 let rest = null
 
-                //id
-                let id = get(v, 'id', '')
+                try {
 
-                //check
-                if (isestr(id)) {
-
-                    //查找資料表內v.id
-                    let vv = await getValue(v.id) //不會有catch
+                    //id
+                    let id = get(v, 'id', '')
 
                     //check
-                    if (iseobj(vv)) {
-                        //已存在v.id則須刪除
-
-                        //del
-                        await client.del(v.id)
-
-                        //rest
+                    if (!isestr(id)) {
+                        //未給有效v.id視為該筆數據有問題而無法處理, 以ok為0並附err回報,
+                        //與[已給v.id但查無數據]之ok為1有別, 二者須可由ok分辨
+                        //註: 亦不可將無效主鍵送進查詢條件, 故於此直接定案
                         rest = {
-                            n: 1,
-                            nDeleted: 1,
-                            ok: 1,
+                            n: 0,
+                            nDeleted: 0,
+                            ok: 0,
+                            err: `can not delete by invalid id[${id}]`,
                         }
-
                     }
                     else {
-                        //不存在v.id則不刪除
 
-                        //rest
-                        rest = {
-                            n: 1,
-                            nDeleted: 0,
-                            ok: 1,
+                        //check
+                        if (haskey(kp, id)) {
+                            //已存在v.id則須刪除
+
+                            //push
+                            ops.push({ type: 'del', key: id })
+
+                            //update, 須同步移除, 否則同批重複主鍵者會重複計入nDeleted
+                            delete kp[id]
+
+                            rest = {
+                                n: 1,
+                                nDeleted: 1,
+                                ok: 1,
+                            }
+
+                        }
+                        else {
+                            //不存在v.id則不刪除, 未命中故n為0
+                            rest = {
+                                n: 0,
+                                nDeleted: 0,
+                                ok: 1,
+                            }
+
                         }
 
                     }
 
                 }
-                else {
-                    //未給v.id則不刪除
+                catch (err) {
 
-                    //rest
+                    //本筆失敗不中斷整批, 以ok為0並附err回報, 由呼叫端逐筆檢查
                     rest = {
                         n: 1,
                         nDeleted: 0,
-                        ok: 0, //未給v.id視為有問題數據, 故ok給0
+                        ok: 0,
+                        err: getErrMsg(err),
                     }
 
                 }
 
                 return rest
             })
+
+            //write
+            if (size(ops) > 0) {
+                await client.batch(ops)
+            }
 
         }
         catch (err) {
@@ -496,23 +953,40 @@ function WOrmLevel(opt = {}) {
 
         //emit, 於change可能須使用select, 故須放在重設快取之後
         if (!isErr) {
-            try {
 
-                //emit
-                ee.emit('change', 'del', data, res)
+            //emit, 逐筆失敗於該筆結果定案後發出, 每筆一次
+            //此事件之發出不表示整批失敗, 整批仍resolve, 該筆以ok為0回報
+            each(res, (rest, k) => {
+                if (get(rest, 'ok') === 0) {
+                    emitError('del', [get(data, k)], get(rest, 'err'))
+                }
+            })
 
-            }
-            catch (err) {
-                console.log(err)
-            }
+            //emit, 逐筆失敗之error事件已於上方發出, 故必早於本整批change
+            emitChange('del', data, res)
+
         }
 
         //check
         if (isErr) {
+
+            //emit, 整批性錯誤須於reject之前發出
+            emitError('del', data, res)
+
             return Promise.reject(res)
         }
 
         return res
+    }
+    async function del(data) {
+
+        //check client, closed為終態, 於任何檢查與寫入之前先行攔下(T4: 實例已關閉屬整批性錯誤)
+        //不可回[{n:0,nDeleted:0,ok:1}]之正常未命中結果, 否則[已關閉]與[查無資料]同形而fail-open
+        if (isClosed()) {
+            return procClosed('del', data)
+        }
+
+        return serialize(() => delCore(data))
     }
 
     /**
@@ -520,20 +994,19 @@ function WOrmLevel(opt = {}) {
      *
      * @memberOf WOrmLevel
      * @param {Object} [find={}] 輸入刪除條件物件
-     * @returns {Promise} 回傳Promise，resolve回傳刪除結果，reject回傳錯誤訊息
+     * @returns {Promise} 回傳Promise，resolve回傳刪除結果物件{n,nDeleted,ok}，n與nDeleted同為實際刪除筆數，reject回傳錯誤訊息
      */
-    async function delAll(find = {}) {
+    async function delAllCore(find = {}) {
         let isErr = false
 
         //res
         let res = null
         try {
 
-            //ltdt
-            let ltdt = await getData()
+            //waitOpen
+            await waitOpen()
 
-            //filter
-            let nAll = size(ltdt)
+            //filter, 一律由資料庫直讀而不使用快取, 避免依過期數據決定刪除對象
             let nDel = 0
             if (iseobj(find)) {
 
@@ -541,60 +1014,41 @@ function WOrmLevel(opt = {}) {
                 let q = new Query(find)
                 // console.log('q', q)
 
-                //find
-                let _res = q.find(ltdt).all()
-                // console.log('_res', _res)
+                //ops, 以與select同一條件逐筆判定
+                let ops = []
+                for await (let [key, dt] of client.iterator()) {
+                    if (q.test(dt)) {
+                        ops.push({ type: 'del', key })
+                    }
+                }
 
                 //nDel
-                nDel = size(_res)
+                nDel = size(ops)
                 // console.log('nDel', nDel)
 
-                if (nDel === 0) {
-                    //未有find結果等於不刪除
+                //del, 無命中即不寫入, 屬正常結果
+                if (nDel > 0) {
+                    await client.batch(ops)
                 }
-                else if (nAll === nDel) {
-                    //全在find結果內等於全部刪除
 
-                    //empty
-                    for (let v of ltdt) {
-                        await client.del(v.id)
-                    }
-
-                }
-                else {
-                    //部份在find結果內
-
-                    //_kp
-                    let _kp = {}
-                    each(_res, (v, k) => {
-                        _kp[v.id] = { k, v }
-                    })
-
-                    //del
-                    for (let v of ltdt) {
-                        if (haskey(_kp, v.id)) {
-                            //在find結果內代表須刪除
-                            await client.del(v.id)
-                        }
-                    }
-
-                }
             }
             else {
+                //find未給或為空物件時刪除全部數據
 
-                //nDel
-                nDel = nAll
+                //nDel, 先計數方能回報實際刪除筆數
+                let ks = await client.keys().all()
+                nDel = size(ks)
 
-                //empty
-                for (let v of ltdt) {
-                    await client.del(v.id)
+                //clear
+                if (nDel > 0) {
+                    await client.clear()
                 }
 
             }
 
-            //res
+            //res, n為實際刪除筆數而非全表筆數, 故與nDeleted同值
             res = {
-                n: nAll,
+                n: nDel,
                 nDeleted: nDel,
                 ok: 1,
             }
@@ -610,31 +1064,60 @@ function WOrmLevel(opt = {}) {
 
         //emit, 於change可能須使用select, 故須放在重設快取之後
         if (!isErr) {
-            try {
-
-                //emit
-                ee.emit('change', 'delAll', null, res)
-
-            }
-            catch (err) {
-                console.log(err)
-            }
+            emitChange('delAll', null, res)
         }
 
         //check
         if (isErr) {
+
+            //emit, 整批性錯誤須於reject之前發出
+            emitError('delAll', null, res)
+
             return Promise.reject(res)
         }
 
         return res
     }
+    async function delAll(find = {}) {
 
-    //save
+        //check client, closed為終態, 於任何檢查與寫入之前先行攔下(T4: 實例已關閉屬整批性錯誤)
+        if (isClosed()) {
+            return procClosed('delAll', null)
+        }
+
+        return serialize(() => delAllCore(find))
+    }
+
+    /**
+     * 關閉資料庫，因LevelDB對資料庫目錄為OS層之獨佔鎖，用畢須關閉方能令該目錄再被開啟
+     * 註: 關閉為終態，關閉後之各操作一律以整批性錯誤reject，不可再以本實例操作
+     *
+     * @memberOf WOrmLevel
+     * @returns {Promise} 回傳Promise，resolve回傳undefined，reject回傳錯誤訊息
+     */
+    async function close() {
+
+        //check, 已關閉則不重複關閉
+        if (client.status === 'closed') {
+            return
+        }
+
+        //close, 納入佇列, 令已排隊之操作皆完成後方關閉
+        return serialize(async() => {
+            await client.close()
+            _cache = null
+        })
+    }
+
+    //bind
     ee.select = select
+    ee.selectByPk = selectByPk
     ee.insert = insert
+    ee.insertBulk = insertBulk
     ee.save = save
     ee.del = del
     ee.delAll = delAll
+    ee.close = close
 
     return ee
 }
