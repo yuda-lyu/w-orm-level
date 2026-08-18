@@ -29,7 +29,7 @@
 <nav >
     
     
-    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="WOrmLevel.html">WOrmLevel</a><ul class='methods'><li data-type='method'><a href="WOrmLevel.html#.del">del</a></li><li data-type='method'><a href="WOrmLevel.html#.delAll">delAll</a></li><li data-type='method'><a href="WOrmLevel.html#.insert">insert</a></li><li data-type='method'><a href="WOrmLevel.html#.save">save</a></li><li data-type='method'><a href="WOrmLevel.html#.select">select</a></li></ul></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="WOrmLevel.html">WOrmLevel</a><ul class='methods'><li data-type='method'><a href="WOrmLevel.html#.close">close</a></li><li data-type='method'><a href="WOrmLevel.html#.delAllCore">delAllCore</a></li><li data-type='method'><a href="WOrmLevel.html#.delCore">delCore</a></li><li data-type='method'><a href="WOrmLevel.html#.insertBulkCore">insertBulkCore</a></li><li data-type='method'><a href="WOrmLevel.html#.insertCore">insertCore</a></li><li data-type='method'><a href="WOrmLevel.html#.saveCore">saveCore</a></li><li data-type='method'><a href="WOrmLevel.html#.selectByPkCore">selectByPkCore</a></li><li data-type='method'><a href="WOrmLevel.html#.selectCore">selectCore</a></li><li data-type='method'><a href="WOrmLevel.html#~serialize">serialize</a></li></ul></li></ul>
     
 </nav>
 
@@ -74,13 +74,32 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li><p>操作資料庫(Level)</p></li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li><p>操作資料庫(Level)</p>
+<p>回傳物件為EventEmitter，除各操作函數外另發出change與error兩事件，供呼叫端於單一處集中觀察資料異動與失敗。
+事件僅為附加通知，其所送出之資訊皆另有正規管道(操作結果經resolve、整批性錯誤經reject、逐筆失敗經該筆之err欄位)，
+故不監聽亦能取得完整資訊，且監聽與否不改變任何操作之回傳值。</p>
+<p>change事件，參數為(mode, data, res)，於資料實際異動成功後發出：
+mode為操作別字串，可為'insert'、'insertBulk'、'save'、'del'、'delAll'；save內若逐筆走自動插入則該筆另發出mode為'insert'之事件。
+data為本次操作之輸入數據，delAll固定為null。
+res為本次操作之回傳結果。
+逐筆函數以整批為單位發出一次而不逐筆發出，select與selectByPk不發出本事件。</p>
+<p>error事件，參數為(mode, data, err)，於操作發生錯誤時發出：
+mode為操作別字串，可為'select'、'selectByPk'、'insert'、'insertBulk'、'save'、'del'、'delAll'。
+data為本次操作之輸入數據，無輸入數據者為null。
+err為錯誤訊息字串，內容與正規管道所送出者一致。
+整批性錯誤於reject之前發出；逐筆失敗於該筆結果定案後發出，每筆一次。
+註: 逐筆失敗時整批仍resolve，故收到本事件不表示該次呼叫失敗；正常結果(如查無數據、主鍵未命中、全數已存在)不發出本事件。</p>
+<p>註: 本套件之主鍵欄位固定為id，尚未支援指定其他欄位為主鍵。
+註: level無條件寫入、無比較並交換亦無交易，故insert之[檢查主鍵不存在與寫入]與save之[查找主鍵與更新或插入]，
+其原子性由本套件之序列化佇列提供；而LevelDB對資料庫目錄為OS層之獨佔鎖，
+同一目錄無從由第二個實例或第二個行程開啟，故行程內序列化即等同全域互斥，詳見README之併發保證宣告。
+註: 因獨佔鎖之故，用畢須以close()釋放，否則同目錄無法再被開啟。</p></li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line33">line 33</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line57">line 57</a>
     </li></ul></dd>
     
 
@@ -247,12 +266,12 @@
             
                 <td class="default">
                 
-                    <code>'_db'</code>
+                    <code>'./_db'</code>
                 
                 </td>
             
 
-            <td class="description last"><p>輸入資料庫用資料夾字串，預設'_db'</p></td>
+            <td class="description last"><p>輸入資料庫用資料夾字串，預設'./_db'</p></td>
         </tr>
 
     
@@ -376,6 +395,46 @@
         </tr>
 
     
+
+        <tr>
+            
+                <td class="name"><code>autoGenPk</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Boolean</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>true</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入insert、insertBulk與save於數據未帶有效主鍵(本套件為id欄位)時是否自動產生主鍵值，預設true；給false代表主鍵改由呼叫端自備，套件不產生亦不檢查其唯一性與格式，未帶有效主鍵者將reject</p></td>
+        </tr>
+
+    
     </tbody>
 </table>
 
@@ -453,7 +512,7 @@
 
     
 
-    <h4 class="name" id=".del"><span class="type-signature type-signature-async, static">(async, static) </span>del<span class="signature">(data)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
+    <h4 class="name" id=".close"><span class="type-signature type-signature-async, static">(async, static) </span>close<span class="signature">()</span><span class="type-signature"> &rarr; {Promise}</span></h4>
 
     
 
@@ -463,13 +522,14 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li><p>刪除數據</p></li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li><p>關閉資料庫，因LevelDB對資料庫目錄為OS層之獨佔鎖，用畢須關閉方能令該目錄再被開啟
+註: 關閉為終態，關閉後之各操作一律以整批性錯誤reject，不可再以本實例操作</p></li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line410">line 410</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1098">line 1098</a>
     </li></ul></dd>
     
 
@@ -516,59 +576,6 @@
 
 
 
-    <h5 class="h5-parameters">Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>data</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Object</span>
-|
-
-<span class="param-type">Array</span>
-
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last"><p>輸入數據物件或陣列</p></td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-
 
 
 
@@ -587,7 +594,7 @@
 
         
 <div class="param-desc">
-    <p>回傳Promise，resolve回傳刪除結果，reject回傳錯誤訊息</p>
+    <p>回傳Promise，resolve回傳undefined，reject回傳錯誤訊息</p>
 </div>
 
 
@@ -614,7 +621,7 @@
 
     
 
-    <h4 class="name" id=".delAll"><span class="type-signature type-signature-async, static">(async, static) </span>delAll<span class="signature">(find<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
+    <h4 class="name" id=".delAllCore"><span class="type-signature type-signature-async, static">(async, static) </span>delAllCore<span class="signature">(find<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
 
     
 
@@ -630,7 +637,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line525">line 525</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line999">line 999</a>
     </li></ul></dd>
     
 
@@ -765,7 +772,7 @@
 
         
 <div class="param-desc">
-    <p>回傳Promise，resolve回傳刪除結果，reject回傳錯誤訊息</p>
+    <p>回傳Promise，resolve回傳刪除結果物件{n,nDeleted,ok}，n與nDeleted同為實際刪除筆數，reject回傳錯誤訊息</p>
 </div>
 
 
@@ -792,7 +799,7 @@
 
     
 
-    <h4 class="name" id=".insert"><span class="type-signature type-signature-async, static">(async, static) </span>insert<span class="signature">(data)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
+    <h4 class="name" id=".delCore"><span class="type-signature type-signature-async, static">(async, static) </span>delCore<span class="signature">(data)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
 
     
 
@@ -802,13 +809,13 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li><p>插入數據</p></li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li><p>刪除數據，依主鍵刪除</p></li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line180">line 180</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line834">line 834</a>
     </li></ul></dd>
     
 
@@ -926,7 +933,7 @@
 
         
 <div class="param-desc">
-    <p>回傳Promise，resolve回傳插入結果，reject回傳錯誤訊息</p>
+    <p>回傳Promise，resolve回傳與輸入等長之刪除結果陣列，各筆為{n,nDeleted,ok}，n為主鍵命中筆數，單筆失敗或未給有效id者ok為0並附err，reject回傳錯誤訊息</p>
 </div>
 
 
@@ -953,7 +960,7 @@
 
     
 
-    <h4 class="name" id=".save"><span class="type-signature type-signature-async, static">(async, static) </span>save<span class="signature">(data, option<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
+    <h4 class="name" id=".insertBulkCore"><span class="type-signature type-signature-async, static">(async, static) </span>insertBulkCore<span class="signature">(data)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
 
     
 
@@ -963,13 +970,465 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li><p>儲存數據</p></li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li><p>批次插入數據，全批視為一個單位，全部插入成功或一筆都不寫入
+註: 本函數非insert之加速版，兩者衝突政策不同。insert於主鍵已存在時跳過該筆而整批ok為1，
+本函數則整批reject且不寫入任何一筆；同批含重複主鍵者亦視為衝突。確無衝突時兩者結果相同
+註: 於本套件不會較insert快，因兩者皆為一次批次取值與一次批次寫入，
+提供本函數係為與其他w-orm系列套件維持同一組函數，令呼叫端得於各套件間替換而不須改寫呼叫</p></li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line283">line 283</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line533">line 533</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>data</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+|
+
+<span class="param-type">Array</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>輸入數據物件或陣列</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>回傳Promise，resolve回傳插入結果物件{n,nInserted,ok}，n為輸入筆數、nInserted成功時恆等於n，任一筆主鍵已存在則reject回傳錯誤訊息</p>
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise</span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id=".insertCore"><span class="type-signature type-signature-async, static">(async, static) </span>insertCore<span class="signature">(data, option<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li><p>插入數據，僅於主鍵不存在時寫入，已存在者跳過且不覆寫</p></li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line392">line 392</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Attributes</th>
+        
+
+        
+        <th>Default</th>
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>data</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+|
+
+<span class="param-type">Array</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入數據物件或陣列</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>option</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>{}</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入設定物件，預設為{}</p>
+                <h6>Properties</h6>
+                
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Attributes</th>
+        
+
+        
+        <th>Default</th>
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>returnList</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Boolean</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>false</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入是否改回傳逐筆結果布林值，預設false。給true時回傳與輸入等長保序之陣列，各筆為{n,nInserted,ok}，nInserted為1即該筆為新增；聚合計數只回答有幾筆是新的，逐筆結果方能回答是哪幾筆，供下游僅對新資料執行昂貴動作。回傳形式由呼叫點靜態決定，共用之結果處理程式碼不可跨不同取值之呼叫點混用</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+            </td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>回傳Promise，resolve依returnList回傳插入結果：預設回傳聚合物件{n,nInserted,ok}，n為輸入筆數、nInserted為實際插入筆數；returnList為true時回傳逐筆陣列，各筆n恆為1(主鍵命中或經插入)、ok恆為1(insert之錯誤皆屬整批性而reject，不進逐筆)；reject回傳錯誤訊息</p>
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise</span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id=".saveCore"><span class="type-signature type-signature-async, static">(async, static) </span>saveCore<span class="signature">(data, option<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li><p>儲存數據，以主鍵為準更新既有數據，未給之欄位保留；主鍵不存在且autoInsert為true時改為插入</p></li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line642">line 642</a>
     </li></ul></dd>
     
 
@@ -1213,7 +1672,7 @@
 
         
 <div class="param-desc">
-    <p>回傳Promise，resolve回傳儲存結果，reject回傳錯誤訊息</p>
+    <p>回傳Promise，resolve回傳與輸入等長之儲存結果陣列，各筆為{n,nInserted,nModified,ok}，n為主鍵命中筆數，單筆失敗者ok為0並附err，reject回傳錯誤訊息</p>
 </div>
 
 
@@ -1240,7 +1699,166 @@
 
     
 
-    <h4 class="name" id=".select"><span class="type-signature type-signature-async, static">(async, static) </span>select<span class="signature">(find<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
+    <h4 class="name" id=".selectByPkCore"><span class="type-signature type-signature-async, static">(async, static) </span>selectByPkCore<span class="signature">(pk)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li><p>由主鍵查詢單筆數據，因直接由level取值，不需如select提取全表數據再過濾，故數據量大時效能較佳
+註: 本套件之主鍵欄位固定為id，尚未支援指定其他欄位為主鍵</p></li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line328">line 328</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>pk</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>輸入主鍵值字串，本套件之主鍵欄位為id</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>回傳Promise，resolve回傳數據物件，若無此主鍵或主鍵值無效則回傳null，reject回傳錯誤訊息</p>
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise</span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id=".selectCore"><span class="type-signature type-signature-async, static">(async, static) </span>selectCore<span class="signature">(find<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
 
     
 
@@ -1256,7 +1874,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line126">line 126</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line260">line 260</a>
     </li></ul></dd>
     
 
@@ -1391,7 +2009,7 @@
 
         
 <div class="param-desc">
-    <p>回傳Promise，resolve回傳數據，reject回傳錯誤訊息</p>
+    <p>回傳Promise，resolve回傳數據陣列，無符合數據回傳空陣列，reject回傳錯誤訊息</p>
 </div>
 
 
@@ -1410,6 +2028,98 @@
 </dl>
 
     
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="~serialize"><span class="type-signature type-signature-inner">(inner) </span>serialize<span class="signature">()</span><span class="type-signature"></span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li><p>序列化本實例之操作</p>
+<p>level無條件寫入、無比較並交換亦無交易，故insert之[檢查主鍵不存在與寫入]與save之[查找主鍵與更新或插入]，
+其原子性只能由序列化達成。採Promise鏈而非[布林旗標配合輪詢等待]，係因後者之[檢查旗標]與[設定旗標]之間隔有await，
+並非原子之test-and-set，多個等候者之輪詢若落在同一批timer觸發即會同時進入臨界區；
+且輪詢函數逾時後為resolve而非reject，等滿即照樣放行。Promise鏈為嚴格FIFO且無逾時放行，由結構保證互斥。
+select亦納入序列化，令其不致與寫入之批次替換交錯。</p>
+<p>註: 佇列掛於實例層即足夠。LevelDB對資料庫目錄為OS層之獨佔鎖，同一目錄無從由第二個實例或第二個行程開啟
+(實測後開者一律以LEVEL_DATABASE_NOT_OPEN失敗)，故本佇列所涵蓋者即為該目錄之全部操作。</p></li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line118">line 118</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1433,7 +2143,7 @@
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Sat Aug 08 2026 14:27:23 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Tue Aug 18 2026 11:38:42 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>
