@@ -156,7 +156,7 @@ async function test() {
     let spc = await wo.select({ '$or': [{ '$and': [{ value: { '$ne': 123 } }, { value: { '$in': [123, 321, 123.456, 456] } }, { value: { '$nin': [456, 654] } }] }, { '$or': [{ value: { '$lte': -1 } }, { value: { '$gte': 400 } }] }] })
     console.log('select by $or, $and, $ne, $in, $nin', spc)
 
-    // //select by regex //mingo不支援regex
+    // //select by regex //系列條件白名單不支援$regex(含$options), 會整批reject(invalid find: unsupported operator), 須改為select後自行過濾
     // let sr = await wo.select({ name: { $regex: 'PeT', $options: '$i' } })
     // console.log('selectReg', sr)
 

@@ -99,7 +99,7 @@ err為錯誤訊息字串，內容與正規管道所送出者一致。
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line57">line 57</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line58">line 58</a>
     </li></ul></dd>
     
 
@@ -529,7 +529,7 @@ err為錯誤訊息字串，內容與正規管道所送出者一致。
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1098">line 1098</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1191">line 1191</a>
     </li></ul></dd>
     
 
@@ -631,13 +631,34 @@ err為錯誤訊息字串，內容與正規管道所送出者一致。
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li><p>刪除全部數據，需與del分開，避免未傳數據導致直接刪除全表</p></li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li><p>依條件刪除多筆數據(破壞性操作，須審慎使用，非必要不用；刪除單筆請用del)</p>
+<p>使用須知:</p>
+<ol>
+<li>不給條件即刪除全部數據: find未給、為undefined或為{}時，刪除資料表內全部數據，不另行確認。
+給了條件才是部分刪除。</li>
+<li>傳了值卻不是條件物件(null、陣列含[]與[{...}]、字串、數值、布林、函數、Date、RegExp、Map、Set、類別實例等)
+一律整批reject，不視為{}，不刪除任何數據。</li>
+<li>條件僅支援系列白名單: 欄位等值{欄:純量}(多欄為AND)、欄位運算子$eq $ne $gt $gte $lt $lte(值為純量)與
+$in $nin(值為純量陣列)、文件層$and $or(值為條件物件之非空陣列)。純量為字串(不含NUL字元與孤立代理字元)、有限數字、布林、有效Date；
+null僅可用於欄位等值、$eq、$ne。白名單外之運算子($not $nor $regex $options $exists $where $expr $like $ilike等)、
+欄位層$and/$or、子查詢、函數值、Symbol鍵、undefined值、空的$nin/$and/$or等一律整批reject，
+訊息為invalid find: 原因 at [路徑]，且不刪除任何數據。</li>
+<li>與select共用同一檢核與同一條件，select(find)命中之數據即本函數刪除之數據；
+建議先以select(find)確認命中範圍再刪除。</li>
+<li>條件值若來自可能為undefined、null或空陣列之變數，呼叫端須先自行判斷；undefined值會reject而非被忽略，
+空的$nin會reject，$in:[]則為恆假(刪除0筆)。</li>
+<li>語意差異(依後端，見README): MongoDB式: $ne(比較值非null時)與$nin會命中欄位為null或缺欄之數據，$ne:null則排除之；
+欄名同於Object.prototype成員(constructor、toString等)者，數據無此自有欄位時視為缺欄；
+Date條件於本後端轉為ISO字串後比較(與字串型欄位亦會比較，範圍比較僅在年份0000-9999內正確，見README)。
+需明確表達時可用可攜寫法: 排除NULL為{$and:[{f:{$ne:null}},{f:{$ne:x}}]}，含NULL為{$or:[{f:null},{f:{$ne:x}}]}。</li>
+</ol>
+<p>n與nDeleted皆為實際刪除筆數，不取全表筆數。條件無命中時回{n:0,nDeleted:0,ok:1}，不視為錯誤。</p></li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line999">line 999</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1085">line 1085</a>
     </li></ul></dd>
     
 
@@ -746,7 +767,7 @@ err為錯誤訊息字串，內容與正規管道所送出者一致。
                 </td>
             
 
-            <td class="description last"><p>輸入刪除條件物件</p></td>
+            <td class="description last"><p>輸入刪除條件物件，不給予find則代表刪除全部數據</p></td>
         </tr>
 
     
@@ -772,7 +793,7 @@ err為錯誤訊息字串，內容與正規管道所送出者一致。
 
         
 <div class="param-desc">
-    <p>回傳Promise，resolve回傳刪除結果物件{n,nDeleted,ok}，n與nDeleted同為實際刪除筆數，reject回傳錯誤訊息</p>
+    <p>回傳Promise，resolve回傳刪除結果物件{n,nDeleted,ok}，reject回傳錯誤訊息</p>
 </div>
 
 
@@ -815,7 +836,7 @@ err為錯誤訊息字串，內容與正規管道所送出者一致。
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line834">line 834</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line899">line 899</a>
     </li></ul></dd>
     
 
@@ -980,7 +1001,7 @@ err為錯誤訊息字串，內容與正規管道所送出者一致。
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line533">line 533</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line598">line 598</a>
     </li></ul></dd>
     
 
@@ -1141,7 +1162,7 @@ err為錯誤訊息字串，內容與正規管道所送出者一致。
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line392">line 392</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line457">line 457</a>
     </li></ul></dd>
     
 
@@ -1428,7 +1449,7 @@ err為錯誤訊息字串，內容與正規管道所送出者一致。
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line642">line 642</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line707">line 707</a>
     </li></ul></dd>
     
 
@@ -1716,7 +1737,7 @@ err為錯誤訊息字串，內容與正規管道所送出者一致。
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line328">line 328</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line393">line 393</a>
     </li></ul></dd>
     
 
@@ -1868,13 +1889,14 @@ err為錯誤訊息字串，內容與正規管道所送出者一致。
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li><p>查詢數據</p></li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li><p>查詢數據</p>
+<p>條件find僅支援系列白名單(規則同delAll之第1-3點，見delAll)，與delAll共用同一檢核，select(find)命中之數據即delAll(find)刪除之數據</p></li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line260">line 260</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line321">line 321</a>
     </li></ul></dd>
     
 
@@ -1983,7 +2005,7 @@ err為錯誤訊息字串，內容與正規管道所送出者一致。
                 </td>
             
 
-            <td class="description last"><p>輸入查詢條件物件</p></td>
+            <td class="description last"><p>輸入查詢條件物件(系列白名單，規則同delAll之第1-3點); 未給、undefined或{}回傳全部數據; 非條件物件或白名單外運算子整批reject</p></td>
         </tr>
 
     
@@ -2059,7 +2081,7 @@ select亦納入序列化，令其不致與寫入之批次替換交錯。</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line118">line 118</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line119">line 119</a>
     </li></ul></dd>
     
 
@@ -2143,7 +2165,7 @@ select亦納入序列化，令其不致與寫入之批次替換交錯。</p>
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Sun Oct 11 2026 13:48:16 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Sat Oct 17 2026 14:56:21 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>
