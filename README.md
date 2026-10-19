@@ -34,7 +34,19 @@ level 無條件寫入、無比較並交換亦無交易，故 `insert` 的「檢�
 Date：本套件以 JSON 存值，Date 存入後為 ISO 字串(`toISOString()`)；條件內之 Date 於入口檢核之後、查詢之前轉為同一格式之 ISO 字串(只轉換檢核所回傳之複本，不改動呼叫端之物件)，故 `{ d: new Date(...) }`、`$gte`、`$in` 等皆可命中。注意 Date 條件等同於其 ISO 字串條件，以字串字典序比較：① 與字串型欄位亦會比較(`{ d: { $lt: new Date(...) } }` 可能命中 `d` 為字典序較小之字串的數據)，欄位混放 Date 與字串時請勿用 Date 條件刪除；② 字典序僅在 Date 介於西元 0000–9999 年時等於時間序(此範圍內 `toISOString()` 恆為 24 字元 `YYYY-MM-DDTHH:mm:ss.sssZ`；範圍外輸出 `+yyyyyy-`、`-yyyyyy-` 前綴，字典序與時間序顛倒)。
 
 - **條件側 fail-closed**：條件內任何位置(欄位等值、`$eq $ne $gt $gte $lt $lte`、`$in $nin` 之元素、`$and`/`$or` 內)之 `Date` 年份小於 0 或大於 9999(如 `new Date(8.64e15)`、`new Date(-8.64e15)`、`-000001` 年、`+010000` 年)，`select` 與 `delAll` 皆整批 reject，訊息為 `invalid find: Date year is out of range 0000-9999 at [<路徑>]`(不回顯值)，於讀取之前 reject，不讀取、不刪除、不發出 `change` 事件。邊界 `0000-01-01T00:00:00.000Z` 與 `9999-12-31T23:59:59.999Z` 接受。此檢核屬本套件轉譯層(共用檢核 `cvOrmFind` 接受一切有效 `Date`)。例如修正前 `delAll({ t: { $gt: new Date(8.64e15) } })`(意為「晚於最大日期」，應無命中)會因字典序顛倒而刪除所有帶日期之數據，現改為 reject。
-- **數據側不處理**：寫入(`insert`、`insertBulk`、`save`)範圍外 `Date` 之行為不變，仍存為 `+yyyyyy-…`、`-yyyyyy-…` 之 ISO 字串；**範圍外 `Date` 之資料無法以 `Date` 條件正確比較**。例如以 `new Date(8.64e15)` 作「永不過期」哨兵時，範圍內之條件 `{ expireAt: { $lt: 現在 } }` 仍會因字典序命中哨兵(`'+275760-…' < '2026-…'`)，`delAll` 會將其刪除。此限制是雙向的：既可能誤命中(上例)，亦可能漏命中(例如 `{ t: { $gt: new Date('9999-12-31T23:59:59.999Z') } }` 不會命中 `new Date(8.64e15)` 之資料)，範圍外 `Date` 之資料彼此間的順序亦不可靠。請勿以範圍外 `Date` 作哨兵，改用範圍內之值(如 `new Date('9999-12-31T23:59:59.999Z')`)或 `null` 表示永不過期(此二者不會被 `{ t: { $lt: 現在 } }` 命中，但仍會被 `$ne`、`$nin` 命中，依條件自行斟酌)。
+- **數據側**：寫入(`insert`、`insertBulk`、`save`)範圍外 `Date` 自 1.0.34 起整批 reject，見下節「寫入數據之 Date」。**資料庫內既有之範圍外 `Date` 字串(舊版存入者)仍無法以 `Date` 條件正確比較**：例如舊版以 `new Date(8.64e15)` 作「永不過期」哨兵存入之 `'+275760-…'`，範圍內之條件 `{ expireAt: { $lt: 現在 } }` 仍會因字典序命中哨兵(`'+275760-…' < '2026-…'`)，`delAll` 會將其刪除。此限制是雙向的：既可能誤命中(上例)，亦可能漏命中(例如 `{ t: { $gt: new Date('9999-12-31T23:59:59.999Z') } }` 不會命中 `'+275760-…'` 之資料)，範圍外資料彼此間的順序亦不可靠。請自行清理或改寫既有資料，清理方式見下節。
+
+### 寫入數據之 Date (Date in written data)
+
+自 1.0.34 起，`insert`、`insertBulk`、`save`(含自動插入、更新既有與合併)於寫入前檢核數據內**任何深度**(頂層欄位、巢狀物件、陣列內)之 `Date`：年份須介於 0000–9999(此範圍內序列化後恆為 24 字元 `YYYY-MM-DDTHH:mm:ss.sssZ`，字典序等於時間序)。年份小於 0 或大於 9999 者(如 `new Date(8.64e15)`、`new Date(-8.64e15)`、`-000001` 年、`+010000` 年)整批 reject(fail-closed，與條件側一致)：
+
+- 訊息為 `invalid data: Date year is out of range 0000-9999 at [<路徑>]`，路徑形如 `data[0].expireAt`、`data[2].list[1].t`(輸入為單一物件時視為長度 1 之陣列；物件之鍵非一般識別字者以 `["a.b"]` 表示)，不回顯值。於 reject 之前發出一次 `error` 事件，不發出 `change` 事件。
+- 整批中任一筆含範圍外 `Date` 即整批 reject，不寫入任何一筆，資料庫不變。`save` 即使因 `autoInsert: false` 而主鍵不存在(不會寫入)亦先經同一檢核。已關閉之實例仍先以已關閉訊息 reject；`autoGenPk: false` 而缺主鍵者仍先以缺主鍵訊息 reject。
+- 邊界 `0000-01-01T00:00:00.000Z` 與 `9999-12-31T23:59:59.999Z` 接受。無效 `Date`(`Invalid Date`)處置不變，序列化為 `null` 存入。
+- 只檢核 `Date` 物件，以 `JSON.stringify`(即實際寫入之序列化)之結果判定：已是字串者(如讀出後再存回之 `'+275760-09-13T00:00:00.000Z'`)、`Map`/`Set` 內之 `Date`(序列化為 `{}`)、非 `Date` 之 `toJSON` 物件(含 `Buffer`)之輸出皆不檢核；`TypedArray`、`DataView` 的自有屬性照常序列化，其內之 `Date` 會檢核。刻意構造之物件(自訂 `toJSON` 回傳含 `Date` 之物件、依屬性鍵或狀態回傳不同值之 `toJSON`、`Proxy` 包裝之 `Date`、`cloneDeep` 不複製之物件)不在檢核範圍。
+- 原因：範圍外 `Date` 存為 `+yyyyyy-…`、`-yyyyyy-…` 字串後，字典序與時間序顛倒。例如以 `new Date(8.64e15)` 作「永不過期」哨兵，`delAll({ t: { $lt: new Date() } })` 會因字典序把它當成過去而刪除。「永不過期」請改用 `null`，或範圍內之 `new Date('9999-12-31T23:59:59.999Z')`(此二者不會被 `{ t: { $lt: 現在 } }` 命中，但仍會被 `$ne`、`$nin` 命中，依條件自行斟酌)。
+
+**既有資料不遷移、不改讀取**：1.0.34 起寫入拒收，但資料庫內已存在之範圍外 `Date` 字串仍有字典序風險，請自行清理或改寫。例如 `let rows = (await wo.select()).filter((v) => /^[+-]\d{6}-/.test(v.t))` 找出欄位 `t` 為範圍外字串者(巢狀欄位同理自行走訪)，再 `for (let v of rows) { await wo.save({ id: v.id, t: null }) }` 或以範圍內之值覆寫。
 
 語意為 MongoDB 式：`{ f: null }` 命中 `f` 為 `null` 或缺欄之數據，`$ne: x`(x 非 `null`)與 `$nin` 亦命中欄位為 `null` 或缺欄之數據，`$ne: null` 則排除之。欄名同於 `Object.prototype` 成員者(`constructor`、`toString`、`hasOwnProperty` 等)，數據無此自有欄位時視為缺欄。欄位值為陣列時，純量與 `$in` 條件仍以元素比對(`{ tags: 'x' }` 命中 `tags: ['x', 'y']`)。欲在 `w-orm-*` 各後端得到相同結果，請明確寫出：排除 null/缺欄用 `{ $and: [{ f: { $ne: null } }, { f: { $ne: x } }] }`，含 null/缺欄用 `{ $or: [{ f: null }, { f: { $ne: x } }] }`。
 
@@ -45,7 +57,8 @@ Date：本套件以 JSON 存值，Date 存入後為 ISO 字串(`toISOString()`)�
 - 移除：白名單以外之全部 `mingo` 運算子(`$not $nor $regex $options $exists $type $mod $elemMatch $size $all $expr $where $bitsAllSet` 等)；`RegExp` 值(`{ name: /x/i }`、`$in: [/x/]`)；陣列字面值之等值、巢狀物件等值(`{ tags: ['x', 'y'] }`、`{ o: { k: 1 } }`)與 `$elemMatch`、`$all`、`$size`(欄位值為陣列時，純量與 `$in` 條件之元素比對語意仍保留)；點路徑(`{ 'o.k': 1 }`)。需要時請 `select()` 後於記憶體過濾。
 - 改為 reject(原本靜默放行)：不是條件物件之 `find`(`null`、`[]`、`'x'`、`123`、`true`、函數、`Date`、`Map`、`Set`、僅含 Symbol 鍵之物件、條件在原型上之物件)，原本 `select(find)` 回傳全部數據、`delAll(find)` 刪除全部數據(帶自有鍵之類別實例原本即由 `mingo` 拒收，訊息為 `query criteria must be an object`，現統一為 `invalid find`)；`undefined` 值(`{ age: undefined }`、`$eq: undefined` 原本命中欄位為 null 或缺欄之數據，`$in: [undefined]` 原本無命中，稀疏陣列之洞原被當缺欄)；`NaN`、`Infinity`、函數、`Symbol` 之值；`$nin: []`、`$and: []`、`$or: []`、`$and: [{}]`、`$or: [{}]`、`{ age: {} }`；不合文法之欄名、存取器與不可列舉鍵；巢狀深度超過 32、`$in` 超過 10000 項。
 - 新行為：條件內之 Date 可命中(原本因數據為 ISO 字串而條件為 Date，`$eq`、`$gt`、`$gte`、`$lt`、`$lte`、`$in` 恆不命中，`$ne`、`$nin` 恆命中，`delAll` 因而可能刪除全部)；Date 範圍比較之限制見上。
-- 改為 reject(Date 範圍)：條件內任何位置之 `Date` 年份小於 0 或大於 9999(如 `new Date(8.64e15)`)，原本轉為帶正負號之 ISO 字串後以字典序比較，結果與時間序顛倒(`$gt` 哨兵命中所有帶日期之數據、`$lt` 哨兵恆無命中)，現整批 reject；數據側範圍外 `Date` 之寫入行為不變，惟其資料無法以 `Date` 條件正確比較(見上方 Date 節)。
+- 改為 reject(Date 範圍)：條件內任何位置之 `Date` 年份小於 0 或大於 9999(如 `new Date(8.64e15)`)，原本轉為帶正負號之 ISO 字串後以字典序比較，結果與時間序顛倒(`$gt` 哨兵命中所有帶日期之數據、`$lt` 哨兵恆無命中)，現整批 reject；數據側見下一條。
+- 改為 reject(寫入 Date 範圍，1.0.34 起)：`insert`、`insertBulk`、`save` 寫入之數據內任何深度之 `Date` 年份小於 0 或大於 9999(如以 `new Date(8.64e15)` 作「永不過期」哨兵)，原本照存為 `+yyyyyy-…`、`-yyyyyy-…` 字串(其後會被 `{ t: { $lt: 現在 } }` 因字典序命中而遭 `delAll` 刪除)，現整批 reject，訊息為 `invalid data: Date year is out of range 0000-9999 at [<路徑>]`；請改用 `null` 或 `new Date('9999-12-31T23:59:59.999Z')`。既有資料不遷移，仍有字典序風險，請自行清理或改寫(見上方「寫入數據之 Date」)。
 - 錯誤訊息為 `invalid find: <原因> at [<路徑>]`；原本由 `mingo` 拋出錯誤者，現統一為此訊息。
 
 ## Documentation

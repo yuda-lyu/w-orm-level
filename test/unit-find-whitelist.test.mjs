@@ -5,6 +5,8 @@ import { Level } from 'level'
 import cvCases from 'wsemi/src/_cvOrmFindCases.mjs'
 import cvOrmFind from 'wsemi/src/cvOrmFind.mjs'
 import WOrm from '../src/WOrmLevel.mjs'
+import { tick, mkObserver } from './lib/mkObserver.mjs'
+import { leaves, chkSame } from './lib/leaves.mjs'
 
 
 //條件(find)之系列白名單(帳本R-FIND-01; 規則: C:\opensrcOper\dspec\w-orm系列條件語法支援盤點.md〈一之三〉)
@@ -20,9 +22,6 @@ describe('find-whitelist', function() {
     //ids, 取id集合(升冪)
     let ids = (rs) => rs.map((v) => v.id).sort()
 
-    //tick, 讓出一個macrotask, 令延遲發出之事件有機會發出
-    let tick = () => new Promise((resolve) => setTimeout(resolve, 0))
-
     //directMsg, 共用檢核對同一條件直接給出之訊息(後端須原樣給出, 不得改寫、包裝或另立訊息)
     let directMsg = (f) => {
         try {
@@ -32,46 +31,6 @@ describe('find-whitelist', function() {
             return err.message
         }
         return null
-    }
-
-    //mkObserver, 建立呼叫觀測器: 事件記錄於evs, 每筆error事件附帶發出當下呼叫端之await是否已恢復(settledAtEmit, 即呼叫端可觀察之先後)
-    let mkObserver = (wo) => {
-        let evs = []
-        let cur = { settled: false }
-        wo.on('error', function(mode, data, err) {
-            evs.push({ t: 'error', mode, data, err, settledAtEmit: cur.settled })
-        })
-        wo.on('change', function(mode) {
-            evs.push({ t: 'change', mode })
-        })
-
-        //invoke, 呼叫wo[fn](arg)並回傳{ ok, val, err, nAtSettle, probe, evs }, nAtSettle為結果定案當下之事件數,
-        //probe為結果定案當下(同一microtask鏈內, 尚未讓出macrotask)呼叫probeFn()之回傳, evs為再讓出一個macrotask後之事件
-        let invoke = async(fn, arg, probeFn = null) => {
-            evs.length = 0
-            cur = { settled: false }
-            let out = { ok: false, val: null, err: null, nAtSettle: 0, probe: null, evs: [] }
-            try {
-                out.val = await wo[fn](arg)
-                out.ok = true
-            }
-            catch (err) {
-                out.err = err
-            }
-            cur.settled = true
-            out.nAtSettle = evs.length
-            out.probe = probeFn ? probeFn() : null
-            await tick()
-            out.evs = evs.slice()
-            return out
-        }
-
-        //clear
-        let clear = () => {
-            evs.length = 0
-        }
-
-        return { invoke, clear }
     }
 
     //reset, 清空後以seed()重建
@@ -721,32 +680,6 @@ describe('find-whitelist', function() {
             })
         }
 
-        //leaves與chkSame: 取條件物件之全部節點(物件節點記鍵序,Date節點記毫秒,皆記參照), 供reject後確認呼叫端實際傳入之同一物件逐節點未被改動
-        let leaves = (v, p = 'find', out = []) => {
-            if (v instanceof Date) {
-                out.push({ p, ref: v, ms: v.getTime() })
-            }
-            else if (v !== null && typeof v === 'object') {
-                out.push({ p, ref: v, keys: Object.keys(v).join(',') })
-                for (let k of Object.keys(v)) {
-                    leaves(v[k], `${p}.${k}`, out)
-                }
-            }
-            else {
-                out.push({ p, ref: v })
-            }
-            return out
-        }
-        let chkSame = (a, b) => {
-            assert.strict.equal(a.length, b.length, 'find should keep the same number of nodes')
-            for (let i = 0; i < a.length; i++) {
-                assert.strict.equal(a[i].p, b[i].p)
-                assert.strict.equal(a[i].ref, b[i].ref, `${a[i].p} should keep the same reference or value`)
-                assert.strict.equal(a[i].ms, b[i].ms, `${a[i].p} should keep the same time value`)
-                assert.strict.equal(a[i].keys, b[i].keys, `${a[i].p} should keep the same keys`)
-            }
-        }
-
         //reject: 範圍外Date於各位置, select與delAll皆整批reject, 訊息含路徑且不回顯值, error事件於reject前恰一次, 不發change, 資料不變
         let bads = [
             { name: 'below 0000 (-000001-12-31T23:59:59.999Z)', ms: MS.belowMin, echo: ['000001'] },
@@ -930,28 +863,19 @@ describe('find-whitelist', function() {
             })
         }
 
-        //數據側(R-FIND-02規則5): 範圍外Date之寫入行為不變, 惟其資料無法以Date條件正確比較(文件已載明)
-        it('should keep writing out-of-range Date as signed ISO string and document that such data can not be compared by Date condition', async function() {
+        //數據側(R-FIND-02規則5; 寫入側見R-DATE-01與unit-date-write): 資料庫內既有之範圍外Date字串(舊版寫入之樣子; 現行寫入已拒收範圍外Date物件,
+        //惟字串不是Date物件故仍可寫入)無法以Date條件正確比較(文件已載明)
+        it('should document that out-of-range Date strings already in database can not be compared by Date condition', async function() {
             let w1 = WOrm({ url: `${url}/daterange-data`, db: dbName, cl: 'data' })
-            //三個寫入入口(insertBulk、insert、save之更新與自動插入)皆不檢核資料側之Date, 範圍外者照存為帶正負號之ISO字串
             await w1.insertBulk([
-                { id: 's1', t: D(MS.big) },
-                { id: 's2', t: D(MS.small) },
+                { id: 's1', t: '+275760-09-13T00:00:00.000Z' }, //舊版以new Date(8.64e15)寫入之樣子
+                { id: 's2', t: '-271821-04-20T00:00:00.000Z' }, //舊版以new Date(-8.64e15)寫入之樣子
                 { id: 'n1', t: D(Date.UTC(2020, 0, 1)) },
                 { id: 'nul', t: null },
                 { id: 'max9999', t: new Date('9999-12-31T23:59:59.999Z') },
             ])
             assert.strict.equal((await w1.selectByPk('s1')).t, '+275760-09-13T00:00:00.000Z')
             assert.strict.equal((await w1.selectByPk('s2')).t, '-271821-04-20T00:00:00.000Z')
-            await w1.insert({ id: 'i1', t: D(MS.aboveMax) })
-            assert.strict.equal((await w1.selectByPk('i1')).t, '+010000-01-01T00:00:00.000Z')
-            await w1.save({ id: 'sv1', t: D(MS.belowMin) }) //自動插入
-            assert.strict.equal((await w1.selectByPk('sv1')).t, '-000001-12-31T23:59:59.999Z')
-            await w1.save({ id: 'n1', t: D(MS.big) }) //更新既有
-            assert.strict.equal((await w1.selectByPk('n1')).t, '+275760-09-13T00:00:00.000Z')
-            await w1.save({ id: 'n1', t: D(Date.UTC(2020, 0, 1)) }) //改回範圍內
-            assert.strict.equal((await w1.selectByPk('n1')).t, '2020-01-01T00:00:00.000Z')
-            await w1.delAll({ id: { $in: ['i1', 'sv1'] } })
 
             //範圍內之條件值被接受, 但正年份哨兵s1(+275760年, 時間序屬未來)因字串字典序小於'2026-…'而被$lt現在命中(此即文件所載之限制, 非本檢核可防);
             //s2(-271821年)雖亦命中, 但屬時間序之過去, 結果碰巧正確; null與範圍內最大日期(9999年底)不被命中(文件建議之永不過期寫法)
