@@ -92,6 +92,7 @@ import cvOrmFind from 'wsemi/src/cvOrmFind.mjs'
  * 其原子性由本套件之序列化佇列提供；而LevelDB對資料庫目錄為OS層之獨佔鎖，
  * 同一目錄無從由第二個實例或第二個行程開啟，故行程內序列化即等同全域互斥，詳見README之併發保證宣告。
  * 註: 因獨佔鎖之故，用畢須以close()釋放，否則同目錄無法再被開啟。
+ * 註: 數據以JSON存值，Date存入後為ISO字串；insert、insertBulk與save寫入之Date年份須介於0000-9999，範圍外(如new Date(8.64e15))整批reject，詳見各函數與README。
  *
  * @class
  * @param {Object} [opt={}] 輸入設定物件，預設{}
@@ -227,6 +228,73 @@ function WOrmLevel(opt = {}) {
     //pathStr, 路徑字串化: 全路徑>120字元取...加末100字元, 規則同cvOrmFind之訊息
     let pathStr = (s) => {
         return s.length > 120 ? `...${s.slice(-100)}` : s
+    }
+
+    //reIdent, 數據之鍵為一般識別字者於路徑以.鍵表示, 其餘以括號法表示
+    let reIdent = /^[\p{L}_$][\p{L}\p{M}\p{N}_$]*$/u
+
+    //pathSeg, 數據之鍵於路徑之表示: 數據之鍵不受條件白名單之欄名文法約束(可含空白,點,括號,引號,換行,孤立代理碼元),
+    //故非一般識別字者以JSON字串括號法表示, 過長者依pathKey截短
+    let pathSeg = (k) => {
+        let t = pathKey(k)
+        return reIdent.test(k) ? `.${t}` : `[${JSON.stringify(t)}]`
+    }
+
+    //isDateNode, 是否為JSON序列化時會經toJSON轉為日期字串之Date: 須有可呼叫之toJSON(此判斷同時避免對每個物件節點都以拋錯探測內部槽),
+    //且以Date.prototype.getTime證明內部槽為Date(不受Symbol.toStringTag、instanceof、被覆寫之getTime影響, 跨realm之Date亦可)
+    let isDateNode = (v) => {
+        if (typeof v.toJSON !== 'function') {
+            return false
+        }
+        try {
+            Date.prototype.getTime.call(v)
+            return true
+        }
+        catch (err) {
+            return false
+        }
+    }
+
+    //chkDataDate, 寫入前之Date範圍檢核(帳本R-DATE-01), 供insert、insertBulk與save於cloneDeep之後(即檢核實際寫入之複本)、waitOpen之前呼叫:
+    //走訪數據複本任何深度之Date, 以JSON.stringify(即寫入時之序列化, 檢查之值即使用之值)判定, 序列化為字串者須為reIsoDate之形(年份0000-9999),
+    //範圍外(年份&lt;0或>9999)者fail-closed: 拋出invalid data(由呼叫端既有catch走emitError後reject, 整批不寫入), 不回顯值;
+    //無效Date序列化為null故不檢(既有處置不變); 已是字串者、非Date之toJSON物件(含Buffer)與Map/Set內之Date不檢, 其餘ArrayBuffer視圖(無toJSON者, 序列化時其自有屬性照常輸出)依一般物件走訪;
+    //ks為由根起之鍵序列(陣列索引記number, 物件之鍵記string, 僅於拋出時才組成路徑), seen為已走訪物件集合(進入時加入、不移除):
+    //循環參照遇回邊即略過(仍由寫入時之JSON序列化報錯), 共用參照(菱形圖)亦只走訪一次, 時間為O(節點+邊)
+    let chkDataDate = (v, ks = [], seen = new WeakSet()) => {
+        if (v === null || typeof v !== 'object' || seen.has(v)) {
+            return
+        }
+        if (ArrayBuffer.isView(v) &amp;&amp; typeof v.toJSON === 'function') {
+
+            //Buffer: JSON序列化取其toJSON之輸出({type,data}), 不含自有屬性, 不走訪(避免逐位元組走訪)
+            return
+        }
+        if (isDateNode(v)) {
+            let s = JSON.stringify(v)
+            if (typeof s === 'string' &amp;&amp; s.charAt(0) === '"' &amp;&amp; !reIsoDate.test(s.slice(1, -1))) {
+                let p = `data${ks.map((k) => (typeof k === 'number' ? `[${k}]` : pathSeg(k))).join('')}`
+                throw new Error(`invalid data: Date year is out of range 0000-9999 at [${pathStr(p)}]`)
+            }
+            return
+        }
+        seen.add(v)
+        if (Array.isArray(v)) {
+
+            //陣列以索引走訪(JSON序列化亦逐索引, 空洞為null)
+            for (let i = 0; i &lt; v.length; i++) {
+                ks.push(i)
+                chkDataDate(v[i], ks, seen)
+                ks.pop()
+            }
+        }
+        else {
+            for (let k of Object.keys(v)) {
+                ks.push(k)
+                chkDataDate(v[k], ks, seen)
+                ks.pop()
+            }
+        }
     }
 
     //isoFind, 把cvOrmFind所回傳複本內之Date就地轉為ISO字串(轉譯層): 數據以JSON存值, Date於寫入時已成toISOString()之字串,
@@ -389,7 +457,7 @@ function WOrmLevel(opt = {}) {
      * 查詢數據
      *
      * 條件find僅支援系列白名單(規則同delAll之第1-3點，見delAll)，與delAll共用同一檢核，select(find)命中之數據即delAll(find)刪除之數據
-     * 條件內之Date年份須介於0000-9999，範圍外整批reject；數據側已存入之範圍外Date無法以Date條件正確比較(規則同delAll之第6點，見README)
+     * 條件內之Date年份須介於0000-9999，範圍外整批reject；資料庫內既有之範圍外Date字串(1.0.34起寫入已拒收範圍外Date)無法以Date條件正確比較(規則同delAll之第6點，見README)
      *
      * @memberOf WOrmLevel
      * @param {Object} [find={}] 輸入查詢條件物件(系列白名單，規則同delAll之第1-3點); 未給、undefined或{}回傳全部數據; 非條件物件或白名單外運算子整批reject
@@ -525,6 +593,11 @@ function WOrmLevel(opt = {}) {
     /**
      * 插入數據，僅於主鍵不存在時寫入，已存在者跳過且不覆寫
      *
+     * 數據內任何深度(頂層欄位、巢狀物件、陣列內)之Date年份須介於0000-9999(序列化為固定24字元之ISO字串，字典序即時間序)，
+     * 範圍外(年份小於0或大於9999，如以new Date(8.64e15)作永不過期哨兵)整批reject且不寫入任何一筆，訊息為invalid data: Date year is out of range 0000-9999 at [路徑]，
+     * 不回顯值，於reject之前發出一次error事件、不發出change事件；無效Date維持序列化為null存入；永不過期請改用null或new Date('9999-12-31T23:59:59.999Z')；
+     * 資料庫內既有之範圍外Date字串不遷移，仍無法以Date條件正確比較，詳見README
+     *
      * @memberOf WOrmLevel
      * @param {Object|Array} data 輸入數據物件或陣列
      * @param {Object} [option={}] 輸入設定物件，預設為{}
@@ -567,6 +640,9 @@ function WOrmLevel(opt = {}) {
 
             //check id
             data = procPk(data, 'insert')
+
+            //check Date, 複本內任何深度之Date年份須介於0000-9999, 範圍外整批reject(帳本R-DATE-01)
+            chkDataDate(data)
 
             //waitOpen
             await waitOpen()
@@ -667,6 +743,7 @@ function WOrmLevel(opt = {}) {
      * 本函數則整批reject且不寫入任何一筆；同批含重複主鍵者亦視為衝突。確無衝突時兩者結果相同
      * 註: 於本套件不會較insert快，因兩者皆為一次批次取值與一次批次寫入，
      * 提供本函數係為與其他w-orm系列套件維持同一組函數，令呼叫端得於各套件間替換而不須改寫呼叫
+     * 註: 數據內任何深度之Date年份須介於0000-9999，範圍外(如new Date(8.64e15))整批reject且不寫入任何一筆，規則同insert，詳見insert與README
      *
      * @memberOf WOrmLevel
      * @param {Object|Array} data 輸入數據物件或陣列
@@ -698,6 +775,9 @@ function WOrmLevel(opt = {}) {
 
             //check id
             data = procPk(data, 'insertBulk')
+
+            //check Date, 複本內任何深度之Date年份須介於0000-9999, 範圍外整批reject(帳本R-DATE-01)
+            chkDataDate(data)
 
             //waitOpen
             await waitOpen()
@@ -775,6 +855,9 @@ function WOrmLevel(opt = {}) {
     /**
      * 儲存數據，以主鍵為準更新既有數據，未給之欄位保留；主鍵不存在且autoInsert為true時改為插入
      *
+     * 數據內任何深度之Date年份須介於0000-9999，範圍外(如new Date(8.64e15))整批reject且不寫入任何一筆(逐筆失敗之ok為0機制不適用)，規則同insert，詳見insert與README；
+     * autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合併與覆寫路徑寫入之Date皆來自已檢核之數據，已存在於資料庫之字串不檢核
+     *
      * @memberOf WOrmLevel
      * @param {Object|Array} data 輸入數據物件或陣列
      * @param {Object} [option={}] 輸入設定物件，預設為{}
@@ -806,6 +889,9 @@ function WOrmLevel(opt = {}) {
 
             //check id
             data = procPk(data, 'save')
+
+            //check Date, 複本內任何深度之Date年份須介於0000-9999, 範圍外整批reject(帳本R-DATE-01); 合併與覆寫路徑之Date皆來自此複本
+            chkDataDate(data)
 
             //waitOpen
             await waitOpen()
@@ -1152,8 +1238,9 @@ function WOrmLevel(opt = {}) {
      *    欄名同於Object.prototype成員(constructor、toString等)者，數據無此自有欄位時視為缺欄；
      *    Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦會比較)：條件內任何位置之Date其年份須介於0000-9999，
      *    範圍外(年份小於0或大於9999，如new Date(8.64e15)、new Date(-8.64e15))整批reject，訊息為invalid find: Date year is out of range 0000-9999 at [路徑]，
-     *    不回顯值，不讀取、不刪除任何數據；數據側已存入之範圍外Date(如以new Date(8.64e15)作永不過期哨兵)寫入行為不變，
-     *    但此類資料無法以Date條件正確比較(例如{t:{$lt:現在}}會命中哨兵並將其刪除)，見README。
+     *    不回顯值，不讀取、不刪除任何數據；數據側自1.0.34起insert、insertBulk與save寫入時已拒收範圍外Date，
+     *    但資料庫內既有之範圍外Date字串(舊版以new Date(8.64e15)作永不過期哨兵存入者)仍無法以Date條件正確比較
+     *    (例如{t:{$lt:現在}}會命中哨兵並將其刪除)，請自行清理或改寫，見README。
      *    需明確表達時可用可攜寫法: 排除NULL為{$and:[{f:{$ne:null}},{f:{$ne:x}}]}，含NULL為{$or:[{f:null},{f:{$ne:x}}]}。
      *
      * n與nDeleted皆為實際刪除筆數，不取全表筆數。條件無命中時回{n:0,nDeleted:0,ok:1}，不視為錯誤。
@@ -1311,7 +1398,7 @@ export default WOrmLevel
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Mon Oct 19 2026 20:06:39 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Mon Oct 19 2026 21:48:09 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>
