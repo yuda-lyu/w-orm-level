@@ -1,4 +1,5 @@
 import assert from 'assert'
+import vm from 'vm'
 import w from 'wsemi'
 import { Level } from 'level'
 import cvCases from 'wsemi/src/_cvOrmFindCases.mjs'
@@ -578,6 +579,480 @@ describe('find-whitelist', function() {
                 }
             }
             await wo.close()
+        })
+
+    })
+
+    //範圍外Date條件fail-closed(帳本R-FIND-02): 數據以JSON存值, Date條件轉ISO字串後以字典序比較, 年份介於0000-9999時為固定24字元, 字典序即時間序;
+    //年份<0或>9999時toISOString()帶+yyyyyy-/-yyyyyy-前綴, 字典序與時間序顛倒, 故轉譯層對此類條件值整批reject(訊息格式同cvOrmFind, 不回顯值), select與delAll皆同, 於任何讀取之前
+    describe('date-range', function() {
+        let MS = {
+            min: -62167219200000, //0000-01-01T00:00:00.000Z
+            max: 253402300799999, //9999-12-31T23:59:59.999Z
+            belowMin: -62167219200001, //-000001-12-31T23:59:59.999Z
+            aboveMax: 253402300800000, //+010000-01-01T00:00:00.000Z
+            big: 8.64e15, //+275760-09-13T00:00:00.000Z
+            small: -8.64e15, //-271821-04-20T00:00:00.000Z
+        }
+        let D = (ms) => new Date(ms)
+        let ok = () => D(Date.UTC(2026, 5, 1))
+        let wo = null
+        let ob = null
+        let baseRows = null
+
+        //rowsDr, 皆為範圍內之Date(r3、r4為邊界)
+        let rowsDr = () => [
+            { id: 'r1', t: D(Date.UTC(2020, 0, 1)) },
+            { id: 'r2', t: D(Date.UTC(2099, 0, 1)) },
+            { id: 'r3', t: D(MS.min) },
+            { id: 'r4', t: D(MS.max) },
+            { id: 'r5' },
+        ]
+
+        //resetDr
+        let resetDr = async(w0) => {
+            await w0.delAll()
+            await w0.insertBulk(rowsDr())
+        }
+
+        //expectMsg, 本層之訊息(格式同cvOrmFind: invalid find: 原因 at [路徑])
+        let expectMsg = (path) => `invalid find: Date year is out of range 0000-9999 at [${path}]`
+
+        before(async function() {
+            wo = WOrm({ url: `${url}/daterange`, db: dbName, cl: 'daterange' })
+            ob = mkObserver(wo)
+            await resetDr(wo)
+            baseRows = sortRows(await wo.select())
+        })
+
+        after(async function() {
+            await wo.close()
+        })
+
+        it('should store Date at the boundaries as fixed 24-char ISO strings', async function() {
+            await resetDr(wo)
+            assert.strict.equal((await wo.selectByPk('r3')).t, '0000-01-01T00:00:00.000Z')
+            assert.strict.equal((await wo.selectByPk('r4')).t, '9999-12-31T23:59:59.999Z')
+        })
+
+        //接受: 邊界(0000-01-01T00:00:00.000Z、9999-12-31T23:59:59.999Z)內之Date, 命中集合正確且delAll刪除之集合等於select命中之集合
+        let accepts = [
+            { name: 'direct min', find: () => ({ t: D(MS.min) }), ids: ['r3'] },
+            { name: 'direct max', find: () => ({ t: D(MS.max) }), ids: ['r4'] },
+            { name: '$eq min', find: () => ({ t: { $eq: D(MS.min) } }), ids: ['r3'] },
+            { name: '$ne min', find: () => ({ t: { $ne: D(MS.min) } }), ids: ['r1', 'r2', 'r4', 'r5'] },
+            { name: '$gte min', find: () => ({ t: { $gte: D(MS.min) } }), ids: ['r1', 'r2', 'r3', 'r4'] },
+            { name: '$gt min', find: () => ({ t: { $gt: D(MS.min) } }), ids: ['r1', 'r2', 'r4'] },
+            { name: '$lt min', find: () => ({ t: { $lt: D(MS.min) } }), ids: [] },
+            { name: '$lte min', find: () => ({ t: { $lte: D(MS.min) } }), ids: ['r3'] },
+            { name: '$gt max', find: () => ({ t: { $gt: D(MS.max) } }), ids: [] },
+            { name: '$gte max', find: () => ({ t: { $gte: D(MS.max) } }), ids: ['r4'] },
+            { name: '$lt max', find: () => ({ t: { $lt: D(MS.max) } }), ids: ['r1', 'r2', 'r3'] },
+            { name: '$lte max', find: () => ({ t: { $lte: D(MS.max) } }), ids: ['r1', 'r2', 'r3', 'r4'] },
+            { name: '$in min and max', find: () => ({ t: { $in: [D(MS.min), D(MS.max)] } }), ids: ['r3', 'r4'] },
+            { name: '$nin min and max', find: () => ({ t: { $nin: [D(MS.min), D(MS.max)] } }), ids: ['r1', 'r2', 'r5'] },
+            { name: '$and from min to max', find: () => ({ $and: [{ t: { $gte: D(MS.min) } }, { t: { $lte: D(MS.max) } }] }), ids: ['r1', 'r2', 'r3', 'r4'] },
+            { name: '$or min or max', find: () => ({ $or: [{ t: D(MS.min) }, { t: D(MS.max) }] }), ids: ['r3', 'r4'] },
+            { name: '$lt now keeps in-range past rows only', find: () => ({ t: { $lt: new Date() } }), ids: ['r1', 'r3'] },
+        ]
+        for (let f of accepts) {
+            it(`should select and delAll the same set by Date in range for ${f.name}`, async function() {
+                await resetDr(wo)
+                ob.clear()
+                let outS = await ob.invoke('select', f.find())
+                assert.strict.equal(outS.ok, true, `select should resolve but got: ${outS.err}`)
+                assert.strict.deepStrictEqual(ids(outS.val), f.ids)
+                assert.strict.equal(outS.evs.filter((v) => v.t === 'error').length, 0)
+                let outD = await ob.invoke('delAll', f.find())
+                assert.strict.equal(outD.ok, true, `delAll should resolve but got: ${outD.err}`)
+                assert.strict.deepStrictEqual(outD.val, { n: f.ids.length, nDeleted: f.ids.length, ok: 1 })
+                assert.strict.equal(outD.evs.filter((v) => v.t === 'error').length, 0)
+                let rest = ids(await wo.select())
+                assert.strict.deepStrictEqual(['r1', 'r2', 'r3', 'r4', 'r5'].filter((id) => rest.indexOf(id) < 0), f.ids)
+            })
+        }
+
+        //接受: 範圍內但非端點之Date(端點內側1毫秒、年份交界、一般值), 以真實時間序為期望(範圍內字典序即時間序), 各運算子交叉select與delAll
+        let inners = [
+            '0000-01-01T00:00:00.001Z',
+            '0000-12-31T23:59:59.999Z',
+            '0001-01-01T00:00:00.000Z',
+            '0999-12-31T23:59:59.999Z',
+            '1970-01-01T00:00:00.000Z',
+            '9998-12-31T23:59:59.999Z',
+            '9999-01-01T00:00:00.000Z',
+            '9999-12-31T23:59:59.998Z',
+        ]
+        let opsInner = [
+            { name: '$eq', mk: (v) => ({ t: { $eq: v } }), hit: (a, b) => a === b, miss: false },
+            { name: 'direct', mk: (v) => ({ t: v }), hit: (a, b) => a === b, miss: false },
+            { name: '$ne', mk: (v) => ({ t: { $ne: v } }), hit: (a, b) => a !== b, miss: true },
+            { name: '$gt', mk: (v) => ({ t: { $gt: v } }), hit: (a, b) => a > b, miss: false },
+            { name: '$gte', mk: (v) => ({ t: { $gte: v } }), hit: (a, b) => a >= b, miss: false },
+            { name: '$lt', mk: (v) => ({ t: { $lt: v } }), hit: (a, b) => a < b, miss: false },
+            { name: '$lte', mk: (v) => ({ t: { $lte: v } }), hit: (a, b) => a <= b, miss: false },
+            { name: '$in', mk: (v) => ({ t: { $in: [D(MS.min), v] } }), hit: (a, b) => a === b || a === MS.min, miss: false },
+            { name: '$nin', mk: (v) => ({ t: { $nin: [v, D(MS.max)] } }), hit: (a, b) => a !== b && a !== MS.max, miss: true },
+        ]
+        for (let iso of inners) {
+            it(`should accept Date ${iso} in every operator and give the time-ordered set in select and delAll`, async function() {
+                let v = new Date(iso)
+                assert.strict.equal(v.toISOString(), iso)
+                for (let op of opsInner) {
+                    let rows = [...rowsDr(), { id: 'x', t: new Date(iso) }]
+                    let expect = rows.filter((r) => (r.t ? op.hit(r.t.getTime(), v.getTime()) : op.miss)).map((r) => r.id).sort()
+                    for (let fn of ['select', 'delAll']) {
+                        await wo.delAll()
+                        await wo.insertBulk(rows)
+                        ob.clear()
+                        let out = await ob.invoke(fn, op.mk(new Date(iso)))
+                        assert.strict.equal(out.ok, true, `${fn} ${op.name} should resolve but got: ${out.err}`)
+                        assert.strict.equal(out.evs.filter((e) => e.t === 'error').length, 0)
+                        if (fn === 'select') {
+                            assert.strict.deepStrictEqual(ids(out.val), expect, `select ${op.name} ${iso}`)
+                        }
+                        else {
+                            assert.strict.deepStrictEqual(out.val, { n: expect.length, nDeleted: expect.length, ok: 1 }, `delAll ${op.name} ${iso}`)
+                            let rest = ids(await wo.select())
+                            assert.strict.deepStrictEqual(rows.map((r) => r.id).sort().filter((id) => rest.indexOf(id) < 0), expect, `delAll set ${op.name} ${iso}`)
+                        }
+                    }
+                }
+            })
+        }
+
+        //leaves與chkSame: 取條件物件之全部節點(物件節點記鍵序,Date節點記毫秒,皆記參照), 供reject後確認呼叫端實際傳入之同一物件逐節點未被改動
+        let leaves = (v, p = 'find', out = []) => {
+            if (v instanceof Date) {
+                out.push({ p, ref: v, ms: v.getTime() })
+            }
+            else if (v !== null && typeof v === 'object') {
+                out.push({ p, ref: v, keys: Object.keys(v).join(',') })
+                for (let k of Object.keys(v)) {
+                    leaves(v[k], `${p}.${k}`, out)
+                }
+            }
+            else {
+                out.push({ p, ref: v })
+            }
+            return out
+        }
+        let chkSame = (a, b) => {
+            assert.strict.equal(a.length, b.length, 'find should keep the same number of nodes')
+            for (let i = 0; i < a.length; i++) {
+                assert.strict.equal(a[i].p, b[i].p)
+                assert.strict.equal(a[i].ref, b[i].ref, `${a[i].p} should keep the same reference or value`)
+                assert.strict.equal(a[i].ms, b[i].ms, `${a[i].p} should keep the same time value`)
+                assert.strict.equal(a[i].keys, b[i].keys, `${a[i].p} should keep the same keys`)
+            }
+        }
+
+        //reject: 範圍外Date於各位置, select與delAll皆整批reject, 訊息含路徑且不回顯值, error事件於reject前恰一次, 不發change, 資料不變
+        let bads = [
+            { name: 'below 0000 (-000001-12-31T23:59:59.999Z)', ms: MS.belowMin, echo: ['000001'] },
+            { name: 'above 9999 (+010000-01-01T00:00:00.000Z)', ms: MS.aboveMax, echo: ['010000'] },
+            { name: 'new Date(8.64e15)', ms: MS.big, echo: ['275760'] },
+            { name: 'new Date(-8.64e15)', ms: MS.small, echo: ['271821'] },
+        ]
+        let positions = [
+            { name: 'direct', find: (d) => ({ t: d }), path: 'find.t' },
+            { name: 'direct in other field', find: (d) => ({ id: 'r1', u: d }), path: 'find.u' },
+            { name: '$eq', find: (d) => ({ t: { $eq: d } }), path: 'find.t.$eq' },
+            { name: '$ne', find: (d) => ({ t: { $ne: d } }), path: 'find.t.$ne' },
+            { name: '$gt', find: (d) => ({ t: { $gt: d } }), path: 'find.t.$gt' },
+            { name: '$gte', find: (d) => ({ t: { $gte: d } }), path: 'find.t.$gte' },
+            { name: '$lt', find: (d) => ({ t: { $lt: d } }), path: 'find.t.$lt' },
+            { name: '$lte', find: (d) => ({ t: { $lte: d } }), path: 'find.t.$lte' },
+            { name: '$in first', find: (d) => ({ t: { $in: [d, ok()] } }), path: 'find.t.$in[0]' },
+            { name: '$in middle', find: (d) => ({ t: { $in: [ok(), d, ok()] } }), path: 'find.t.$in[1]' },
+            { name: '$in last', find: (d) => ({ t: { $in: [ok(), ok(), d] } }), path: 'find.t.$in[2]' },
+            { name: '$nin', find: (d) => ({ t: { $nin: [ok(), d] } }), path: 'find.t.$nin[1]' },
+            { name: '$and', find: (d) => ({ $and: [{ id: 'r1' }, { t: { $lt: d } }] }), path: 'find.$and[1].t.$lt' },
+            { name: '$or', find: (d) => ({ $or: [{ t: d }, { id: 'r1' }] }), path: 'find.$or[0].t' },
+            { name: '$and and $or nested', find: (d) => ({ $and: [{ $or: [{ id: 'r1' }, { $and: [{ t: { $gte: ok() } }, { t: { $lte: d } }] }] }] }), path: 'find.$and[0].$or[1].$and[1].t.$lte' },
+            { name: 'range with valid Date sibling', find: (d) => ({ id: 'r1', t: { $gte: ok(), $lte: d } }), path: 'find.t.$lte' },
+            { name: 'valid Date before and after', find: (d) => ({ a: ok(), t: d, z: ok() }), path: 'find.t' },
+            { name: '$nin first', find: (d) => ({ t: { $nin: [d, ok()] } }), path: 'find.t.$nin[0]' },
+            { name: '$nin middle', find: (d) => ({ t: { $nin: [ok(), d, ok()] } }), path: 'find.t.$nin[1]' },
+            { name: '$nin last of three', find: (d) => ({ t: { $nin: [ok(), ok(), d] } }), path: 'find.t.$nin[2]' },
+            { name: '$in at two-digit index', find: (d) => ({ t: { $in: [...Array.from({ length: 10 }, () => ok()), d, ok()] } }), path: 'find.t.$in[10]' },
+            { name: '$and first branch', find: (d) => ({ $and: [{ t: { $lt: d } }, { id: 'r1' }] }), path: 'find.$and[0].t.$lt' },
+            { name: '$or last branch', find: (d) => ({ $or: [{ id: 'r1' }, { t: d }] }), path: 'find.$or[1].t' },
+            { name: '$or in $and in $or', find: (d) => ({ $or: [{ id: 'r2' }, { $and: [{ id: 'r1' }, { $or: [{ id: 'r3' }, { t: { $eq: d } }] }] }] }), path: 'find.$or[1].$and[1].$or[1].t.$eq' },
+            { name: 'range in reverse order', find: (d) => ({ id: 'r1', t: { $lte: d, $gte: ok() } }), path: 'find.t.$lte' },
+            { name: 'two out-of-range Date in different fields', find: (d) => ({ a: d, b: d }), path: 'find.a' },
+            { name: 'two out-of-range Date in one $in', find: (d) => ({ t: { $in: [ok(), d, d] } }), path: 'find.t.$in[1]' },
+        ]
+        for (let b of bads) {
+            for (let p of positions) {
+                it(`should reject select and delAll without any change for ${b.name} in ${p.name}`, async function() {
+                    await resetDr(wo)
+                    ob.clear()
+                    let d = D(b.ms)
+                    let f = p.find(d)
+                    let msg = expectMsg(p.path)
+                    let before = leaves(f)
+
+                    //cvOrmFind本身接受(證明本檢核屬轉譯層, 非共用檢核)
+                    assert.strict.equal(directMsg(p.find(D(b.ms))), null, 'cvOrmFind should accept the Date')
+
+                    //兩次呼叫皆傳入同一個f, reject後f逐節點(參照、毫秒、鍵序)須與呼叫前相同
+                    for (let fn of ['select', 'delAll']) {
+                        let out = await ob.invoke(fn, f)
+                        chkRej(out, fn, msg)
+                        for (let s of b.echo) {
+                            assert.strict.ok(out.err.message.indexOf(s) < 0, `${fn} message should not echo the value: ${out.err.message}`)
+                        }
+                        chkSame(before, leaves(f))
+                    }
+                    assert.strict.equal(d.getTime(), b.ms)
+                    assert.strict.ok(d instanceof Date)
+
+                    //資料不變
+                    assert.strict.deepStrictEqual(sortRows(await wo.select()), baseRows)
+                })
+            }
+        }
+
+        //字典序顛倒之場景(修正前: 範圍外Date轉為+yyyyyy-/-yyyyyy-字串後, '2020-…'等較大, 故$gt哨兵命中所有帶日期之數據, delAll因而刪光)
+        let inverted = [
+            { name: '$gt new Date(8.64e15)', find: () => ({ t: { $gt: D(MS.big) } }) },
+            { name: '$gte new Date(8.64e15)', find: () => ({ t: { $gte: D(MS.big) } }) },
+            { name: '$lt new Date(8.64e15)', find: () => ({ t: { $lt: D(MS.big) } }) },
+            { name: '$lte new Date(8.64e15)', find: () => ({ t: { $lte: D(MS.big) } }) },
+            { name: '$gt year 10000', find: () => ({ t: { $gt: D(MS.aboveMax) } }) },
+            { name: '$lt year -1', find: () => ({ t: { $lt: D(MS.belowMin) } }) },
+            { name: '$ne new Date(8.64e15)', find: () => ({ t: { $ne: D(MS.big) } }) },
+            { name: '$nin [new Date(8.64e15)]', find: () => ({ t: { $nin: [D(MS.big)] } }) },
+        ]
+        for (let f of inverted) {
+            it(`should not select or delete any row for ${f.name}`, async function() {
+                await resetDr(wo)
+                ob.clear()
+                for (let fn of ['select', 'delAll']) {
+                    let out = await ob.invoke(fn, f.find())
+                    chkRej(out, fn)
+                    assert.strict.ok(out.err.message.indexOf('out of range') >= 0, out.err.message)
+                }
+                assert.strict.deepStrictEqual(sortRows(await wo.select()), baseRows)
+            })
+        }
+
+        //cvOrmFind自身之reject先於本檢核(同一條件同時含範圍外Date與白名單外運算子, 訊息須為cvOrmFind給出者)
+        it('should keep the message of cvOrmFind when the find has other invalid parts', async function() {
+            await resetDr(wo)
+            let mk = () => ({ u: D(MS.big), v: { $regex: 'x' } })
+            let expect = directMsg(mk())
+            assert.strict.notEqual(expect, null)
+            assert.strict.ok(expect.indexOf('out of range') < 0)
+            for (let fn of ['select', 'delAll']) {
+                let out = await ob.invoke(fn, mk())
+                chkRej(out, fn, expect)
+            }
+            assert.strict.deepStrictEqual(sortRows(await wo.select()), baseRows)
+        })
+
+        //無效Date仍由cvOrmFind給出其訊息(不因本檢核改變)
+        it('should keep the message of cvOrmFind for invalid Date', async function() {
+            await resetDr(wo)
+            let mk = () => ({ t: { $lt: new Date(NaN) } })
+            let expect = directMsg(mk())
+            assert.strict.ok(expect.indexOf('invalid Date') >= 0)
+            for (let fn of ['select', 'delAll']) {
+                let out = await ob.invoke(fn, mk())
+                chkRej(out, fn, expect)
+            }
+        })
+
+        //Date之各種形態: 子類別實例、實例自訂toISOString(回範圍內字串)、跨realm(vm)之Date、實例自訂Symbol.toStringTag, 範圍外者一律reject;
+        //共用檢核複製為新Date後才轉字串, 故檢查之值即使用之值, 不受呼叫端之實例方法影響
+        class SubDate extends Date {}
+        let forms = [
+            { name: 'subclass instance', mk: (ms) => new SubDate(ms) },
+            { name: 'own toISOString returning an in-range string', mk: (ms) => { let d = D(ms); d.toISOString = () => '2020-01-01T00:00:00.000Z'; return d } },
+            { name: 'own getTime returning an in-range value', mk: (ms) => { let d = D(ms); d.getTime = () => 0; return d } },
+            { name: 'Date of another realm', mk: (ms) => vm.runInNewContext(`new Date(${ms})`) },
+            { name: 'own Symbol.toStringTag', mk: (ms) => { let d = D(ms); d[Symbol.toStringTag] = 'X'; return d } },
+        ]
+        for (let form of forms) {
+            it(`should reject out-of-range Date given as ${form.name}`, async function() {
+                await resetDr(wo)
+                for (let ms of [MS.big, MS.aboveMax, MS.belowMin, MS.small]) {
+                    let direct = directMsg({ t: { $lt: form.mk(ms) } })
+                    let msg = direct === null ? expectMsg('find.t.$lt') : direct
+                    for (let fn of ['select', 'delAll']) {
+                        let out = await ob.invoke(fn, { t: { $lt: form.mk(ms) } })
+                        chkRej(out, fn, msg)
+                    }
+                }
+                assert.strict.deepStrictEqual(sortRows(await wo.select()), baseRows)
+
+                //範圍內者仍照常命中
+                assert.strict.deepStrictEqual(ids(await wo.select({ t: { $lte: form.mk(MS.min) } })), ['r3'])
+            })
+        }
+
+        //路徑格式: 訊息之路徑須逐字等於cvOrmFind對同一結構給出之路徑(以undefined取代Date令cvOrmFind給出其路徑), 含單鍵>30字元之截短、
+        //截斷處切開代理對、全路徑>120字元之截短與恰為120之邊界
+        let nest = (n, inner) => {
+            let f = inner
+            for (let i = 0; i < n; i++) {
+                f = { $and: [f] }
+            }
+            return f
+        }
+        let pathOf = (msg) => msg.slice(msg.indexOf(' at [') + 5, -1)
+        let pathCases = [
+            { name: 'key of 30 chars', mk: (v) => ({ [`${'k'.repeat(30)}`]: { $lt: v } }) },
+            { name: 'key of 31 chars', mk: (v) => ({ [`${'k'.repeat(31)}`]: { $lt: v } }) },
+            { name: 'key of 128 chars', mk: (v) => ({ [`${'b'.repeat(128)}`]: v }) },
+            { name: 'key cut inside a surrogate pair', mk: (v) => ({ [`${'a'.repeat(29)}\u{20000}zz`]: { $gt: v } }) },
+            { name: 'key with astral letter fully inside 30 chars', mk: (v) => ({ [`${'a'.repeat(27)}\u{20000}`]: { $gt: v } }) },
+            { name: 'non-ASCII key', mk: (v) => ({ 欄位: { $in: [v] } }) },
+            { name: 'path of 114 chars', mk: (v) => nest(13, { t: { $lt: v } }) },
+            { name: 'path of exactly 120 chars', mk: (v) => nest(13, { [`${'k'.repeat(11)}`]: v }) },
+            { name: 'path of 121 chars', mk: (v) => nest(13, { [`${'k'.repeat(12)}`]: v }) },
+            { name: 'path of 122 chars', mk: (v) => nest(14, { t: { $lt: v } }) },
+            { name: 'path of 200 chars with long key', mk: (v) => nest(20, { [`${'k'.repeat(40)}`]: { $lte: v } }) },
+        ]
+        for (let c of pathCases) {
+            it(`should give the same path as cvOrmFind for ${c.name}`, async function() {
+                await resetDr(wo)
+                let direct = directMsg(c.mk(undefined))
+                assert.strict.notEqual(direct, null, 'cvOrmFind should reject the structure with undefined')
+                let path = pathOf(direct)
+                for (let ms of [MS.big, MS.belowMin]) {
+                    for (let fn of ['select', 'delAll']) {
+                        let out = await ob.invoke(fn, c.mk(D(ms)))
+                        chkRej(out, fn, expectMsg(path))
+                    }
+                }
+            })
+        }
+
+        //數據側(R-FIND-02規則5): 範圍外Date之寫入行為不變, 惟其資料無法以Date條件正確比較(文件已載明)
+        it('should keep writing out-of-range Date as signed ISO string and document that such data can not be compared by Date condition', async function() {
+            let w1 = WOrm({ url: `${url}/daterange-data`, db: dbName, cl: 'data' })
+            //三個寫入入口(insertBulk、insert、save之更新與自動插入)皆不檢核資料側之Date, 範圍外者照存為帶正負號之ISO字串
+            await w1.insertBulk([
+                { id: 's1', t: D(MS.big) },
+                { id: 's2', t: D(MS.small) },
+                { id: 'n1', t: D(Date.UTC(2020, 0, 1)) },
+                { id: 'nul', t: null },
+                { id: 'max9999', t: new Date('9999-12-31T23:59:59.999Z') },
+            ])
+            assert.strict.equal((await w1.selectByPk('s1')).t, '+275760-09-13T00:00:00.000Z')
+            assert.strict.equal((await w1.selectByPk('s2')).t, '-271821-04-20T00:00:00.000Z')
+            await w1.insert({ id: 'i1', t: D(MS.aboveMax) })
+            assert.strict.equal((await w1.selectByPk('i1')).t, '+010000-01-01T00:00:00.000Z')
+            await w1.save({ id: 'sv1', t: D(MS.belowMin) }) //自動插入
+            assert.strict.equal((await w1.selectByPk('sv1')).t, '-000001-12-31T23:59:59.999Z')
+            await w1.save({ id: 'n1', t: D(MS.big) }) //更新既有
+            assert.strict.equal((await w1.selectByPk('n1')).t, '+275760-09-13T00:00:00.000Z')
+            await w1.save({ id: 'n1', t: D(Date.UTC(2020, 0, 1)) }) //改回範圍內
+            assert.strict.equal((await w1.selectByPk('n1')).t, '2020-01-01T00:00:00.000Z')
+            await w1.delAll({ id: { $in: ['i1', 'sv1'] } })
+
+            //範圍內之條件值被接受, 但正年份哨兵s1(+275760年, 時間序屬未來)因字串字典序小於'2026-…'而被$lt現在命中(此即文件所載之限制, 非本檢核可防);
+            //s2(-271821年)雖亦命中, 但屬時間序之過去, 結果碰巧正確; null與範圍內最大日期(9999年底)不被命中(文件建議之永不過期寫法)
+            let hit = ids(await w1.select({ t: { $lt: new Date() } }))
+            assert.strict.deepStrictEqual(hit, ['n1', 's1', 's2'])
+
+            //同理$gt最小日期之條件命不到s1(時間序應命中)
+            let hit2 = ids(await w1.select({ t: { $gt: D(MS.min) } }))
+            assert.strict.deepStrictEqual(hit2, ['max9999', 'n1'])
+
+            //亦漏查未來之資料: $gt範圍內最大日期按時間序應命中s1(+275760年)卻無命中
+            let hit3 = ids(await w1.select({ t: { $gt: D(MS.max) } }))
+            assert.strict.deepStrictEqual(hit3, [])
+
+            //delAll依同一判定刪除(select命中之數據即delAll刪除之數據), 文件建議之null與9999年底寫法保留
+            let r = await w1.delAll({ t: { $lt: new Date() } })
+            assert.strict.deepStrictEqual(r, { n: 3, nDeleted: 3, ok: 1 })
+            assert.strict.deepStrictEqual(ids(await w1.select()), ['max9999', 'nul'])
+            await w1.close()
+        })
+
+        //時序: 已關閉先於本檢核
+        it('should reject with closed message before date range check for closed instance', async function() {
+            let w1 = WOrm({ url: `${url}/daterange-closed`, db: dbName, cl: 'closed' })
+            await w1.insert({ id: 'x1', t: ok() })
+            await w1.close()
+            let o1 = mkObserver(w1)
+            for (let fn of ['select', 'delAll']) {
+                let out = await o1.invoke(fn, { t: { $lt: D(MS.big) } })
+                assert.strict.equal(out.ok, false)
+                assert.strict.equal(out.err.message, `can not ${fn} by closed client, instance can not be used after close()`)
+            }
+        })
+
+        //時序: 壞條件於佇列之外立即reject, 不等候先前已排入佇列之操作, 且不使其後之呼叫失敗
+        it('should reject out-of-range Date before queued operations finish and keep queue working', async function() {
+            let w1 = WOrm({ url: `${url}/daterange-queue`, db: dbName, cl: 'queue' })
+            let o1 = mkObserver(w1)
+            await resetDr(w1)
+            let rows = []
+            for (let i = 0; i < 2000; i++) {
+                rows.push({ id: `q${i}`, g: 'Q', v: i })
+            }
+            for (let fn of ['select', 'delAll']) {
+                let done = false
+                let pmBig = w1.insertBulk(rows.map((v) => ({ ...v, id: `${fn}-${v.id}` }))).then(function(r) {
+                    done = true
+                    return r
+                })
+                let out = await o1.invoke(fn, { t: { $gt: D(MS.big) } }, () => done)
+                chkRej(out, fn)
+                assert.strict.equal(out.probe, false, `${fn} should reject before the queued insertBulk finishes`)
+                let rBulk = await pmBig
+                assert.strict.equal(rBulk.nInserted, 2000)
+            }
+            assert.strict.deepStrictEqual(ids(await w1.select({ t: { $gte: D(MS.min) } })), ['r1', 'r2', 'r3', 'r4'])
+            let r = await w1.delAll({ g: 'Q' })
+            assert.strict.deepStrictEqual(r, { n: 4000, nDeleted: 4000, ok: 1 })
+            assert.strict.deepStrictEqual(ids(await w1.select()), ['r1', 'r2', 'r3', 'r4', 'r5'])
+            await w1.close()
+        })
+
+        //時序: useCache已填入快取時仍須reject, 快取與資料不受影響; 範圍內之Date條件仍可用
+        it('should reject out-of-range Date with filled cache and keep data', async function() {
+            let w1 = WOrm({ url: `${url}/daterange-cache`, db: dbName, cl: 'cache', useCache: true })
+            let o1 = mkObserver(w1)
+            await w1.insertBulk(rowsDr())
+            assert.strict.equal((await w1.select()).length, 5)
+            for (let fn of ['select', 'delAll']) {
+                for (let ms of [MS.belowMin, MS.aboveMax, MS.big, MS.small]) {
+                    let out = await o1.invoke(fn, { t: { $gt: D(ms) } })
+                    chkRej(out, fn, expectMsg('find.t.$gt'))
+                }
+            }
+            assert.strict.deepStrictEqual(ids(await w1.select()), ['r1', 'r2', 'r3', 'r4', 'r5'])
+            assert.strict.deepStrictEqual(ids(await w1.select({ t: { $gt: D(MS.min) } })), ['r1', 'r2', 'r4'])
+
+            //熱快取下範圍內之Date條件於delAll亦照常(delAll一律直讀資料庫), 刪除後select不再命中
+            assert.strict.deepStrictEqual(await w1.delAll({ t: { $gt: D(MS.min) } }), { n: 3, nDeleted: 3, ok: 1 })
+            assert.strict.deepStrictEqual(ids(await w1.select()), ['r3', 'r5'])
+            await w1.close()
+        })
+
+        //時序: 檢核先於讀取, 資料庫內有無法解碼之紀錄時, 範圍外Date仍須回invalid find(未讀取), 範圍內Date則因讀取而回解碼錯誤
+        it('should check date range before reading the database', async function() {
+            let urlBad = `${url}/daterange-unreadable`
+            let raw = new Level(`${urlBad}/${dbName}/un`, { valueEncoding: 'buffer' })
+            await raw.put('bad', Buffer.from('{ invalid JSON'))
+            await raw.close()
+
+            let w1 = WOrm({ url: urlBad, db: dbName, cl: 'un' })
+            let o1 = mkObserver(w1)
+            for (let fn of ['select', 'delAll']) {
+                let outOk = await o1.invoke(fn, { t: { $lt: D(MS.max) } })
+                assert.strict.equal(outOk.ok, false, `${fn} with in-range Date should reject by unreadable record`)
+                assert.strict.ok(outOk.err.message.indexOf('invalid find') < 0, outOk.err.message)
+
+                let outBad = await o1.invoke(fn, { t: { $lt: D(MS.aboveMax) } })
+                chkRej(outBad, fn, expectMsg('find.t.$lt'))
+            }
+            await w1.close()
         })
 
     })
