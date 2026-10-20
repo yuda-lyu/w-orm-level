@@ -96,13 +96,24 @@ insert、insertBulk、save與del因輸入本身導致之失敗(如原型為null�
 其原子性由本套件之序列化佇列提供；而LevelDB對資料庫目錄為OS層之獨佔鎖，
 同一目錄無從由第二個實例或第二個行程開啟，故行程內序列化即等同全域互斥，詳見README之併發保證宣告。
 註: 因獨佔鎖之故，用畢須以close()釋放，否則同目錄無法再被開啟。
-註: 數據以JSON存值，Date存入後為ISO字串；insert、insertBulk與save寫入之Date年份須介於0000-9999，範圍外(如new Date(8.64e15))整批reject，詳見各函數與README。</p></li></ul></dd>
+註: 數據以JSON存值，Date存入後為ISO字串；insert、insertBulk與save寫入之Date年份須介於0000-9999，範圍外(如new Date(8.64e15))整批reject，詳見各函數與README。</p>
+<p>字串良構(w-orm系列規則，wsemi之chkOrmStr與chkOrmData): level之鍵經UTF-8編碼，孤立代理字元(String.prototype.isWellFormed()為false)被改寫為U+FFFD，
+使不同主鍵落到同一個鍵而覆蓋、誤刪、誤命中他筆；值為JSON雖可保真，全系列仍一律拒收。於任何讀取與寫入之前拒收：</p>
+<ol>
+<li>主鍵(id)不得含孤立代理字元與NUL，不隨autoGenPk改變；</li>
+<li>寫入資料(insert、insertBulk、save)之字串值與鍵名(含巢狀物件、陣列元素、Map與Set之項目、Error與RegExp之文字)不得含孤立代理字元，值與鍵名之NUL不拒；</li>
+<li>opt.url、opt.db、opt.cl含孤立代理字元者於建構時throw，訊息為invalid opt.&lt;名&gt;: string contains lone surrogate。
+處置與無效主鍵同形：insert與insertBulk整批reject而不寫入任何一筆(error事件先於reject)，save與del該筆ok為0並附err(同批其他筆照常)，selectByPk回null；
+訊息為固定詞彙而不回顯值：invalid id: 原因 at [data[k].id]、invalid data: 原因 at [data[k].路徑](k為批次索引，單一物件為0；不合格之鍵名以<invalid key>標示)，
+原因為string contains lone surrogate、string contains NUL(僅主鍵)、not a string或string is empty(del之id未給、非字串或空字串)。
+U+FFFD本身與成對代理(emoji等)為良構，照常接受。既有資料不遷移，檢出與清除法見README。</li>
+</ol></li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line61">line 61</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line73">line 73</a>
     </li></ul></dd>
     
 
@@ -274,7 +285,7 @@ insert、insertBulk、save與del因輸入本身導致之失敗(如原型為null�
                 </td>
             
 
-            <td class="description last"><p>輸入資料庫用資料夾字串，預設'./_db'</p></td>
+            <td class="description last"><p>輸入資料庫用資料夾字串，預設'./_db'；含孤立代理字元者建構時throw</p></td>
         </tr>
 
     
@@ -314,7 +325,7 @@ insert、insertBulk、save與del因輸入本身導致之失敗(如原型為null�
                 </td>
             
 
-            <td class="description last"><p>輸入使用資料庫名稱字串，預設'worm'</p></td>
+            <td class="description last"><p>輸入使用資料庫名稱字串，預設'worm'；含孤立代理字元者建構時throw</p></td>
         </tr>
 
     
@@ -354,7 +365,7 @@ insert、insertBulk、save與del因輸入本身導致之失敗(如原型為null�
                 </td>
             
 
-            <td class="description last"><p>輸入使用資料表名稱字串，預設'test'</p></td>
+            <td class="description last"><p>輸入使用資料表名稱字串，預設'test'；含孤立代理字元者建構時throw</p></td>
         </tr>
 
     
@@ -532,7 +543,7 @@ insert、insertBulk、save與del因輸入本身導致之失敗(如原型為null�
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1321">line 1321</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1424">line 1424</a>
     </li></ul></dd>
     
 
@@ -665,7 +676,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1215">line 1215</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1318">line 1318</a>
     </li></ul></dd>
     
 
@@ -843,7 +854,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1025">line 1025</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1124">line 1124</a>
     </li></ul></dd>
     
 
@@ -1009,7 +1020,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line715">line 715</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line790">line 790</a>
     </li></ul></dd>
     
 
@@ -1174,7 +1185,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line570">line 570</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line641">line 641</a>
     </li></ul></dd>
     
 
@@ -1463,7 +1474,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line830">line 830</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line908">line 908</a>
     </li></ul></dd>
     
 
@@ -1751,7 +1762,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line501">line 501</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line572">line 572</a>
     </li></ul></dd>
     
 
@@ -1911,7 +1922,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line429">line 429</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line500">line 500</a>
     </li></ul></dd>
     
 
@@ -2096,7 +2107,7 @@ select亦納入序列化，令其不致與寫入之批次替換交錯。</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line122">line 122</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line152">line 152</a>
     </li></ul></dd>
     
 
@@ -2180,7 +2191,7 @@ select亦納入序列化，令其不致與寫入之批次替換交錯。</p>
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Tue Oct 20 2026 12:53:50 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Wed Oct 21 2026 00:43:04 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>
