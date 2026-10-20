@@ -1,6 +1,6 @@
 {
   "name": "w-orm-level",
-  "version": "1.0.35",
+  "version": "1.0.36",
   "main": "dist/w-orm-level.umd.js",
   "dependencies": {
     "level": "^10.0.0",

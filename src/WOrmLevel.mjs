@@ -38,6 +38,8 @@ import cvOrmFind from 'wsemi/src/cvOrmFind.mjs'
  * data為本次操作之輸入數據，無輸入數據者為null。
  * err為錯誤訊息字串，內容與正規管道所送出者一致。
  * 整批性錯誤於reject之前發出；逐筆失敗於該筆結果定案後發出，每筆一次。
+ * insert、insertBulk、save與del因輸入本身導致之失敗(如原型為null之Date使複製拋錯、存取器拋錯)亦屬整批性錯誤，同樣於reject之前恰發出一次、不發出change事件、資料庫不變；
+ * 拋錯於複製建立之前者，data為呼叫端傳入之原值，其後者為複製；err為拋出者之原訊息(呼叫端自行拋出之值或訊息原樣通過，無法轉為字串者以固定訊息unknown error取代)，本套件不另行回顯數據內容。
  * 註: 逐筆失敗時整批仍resolve，故收到本事件不表示該次呼叫失敗；正常結果(如查無數據、主鍵未命中、全數已存在)不發出本事件。
  *
  * 註: 本套件之主鍵欄位固定為id，尚未支援指定其他欄位為主鍵。
@@ -326,9 +328,17 @@ function WOrmLevel(opt = {}) {
     }
 
     //emitError, 操作發生錯誤時發出, 錯誤訊息一律轉為字串
+    //拋出之值本身可能無法轉為字串(如呼叫端之存取器拋出null原型物件, 或其message存取器拋錯), 此時以固定訊息取代, 令error事件仍恰發出一次(帳本R-WRITE-ERR-01), reject之值不變
     let emitError = (mode, data, err) => {
+        let msg = 'unknown error'
         try {
-            ee.emit('error', mode, data, getErrMsg(err))
+            msg = getErrMsg(err)
+        }
+        catch (errMsg) {
+            //無法轉為字串者沿用固定訊息
+        }
+        try {
+            ee.emit('error', mode, data, msg)
         }
         catch (errEmit) {
             console.log(errEmit)
@@ -560,31 +570,31 @@ function WOrmLevel(opt = {}) {
     async function insertCore(data, option = {}) {
         let isErr = false
 
-        //returnList
-        let returnList = get(option, 'returnList')
-        if (!isbol(returnList)) {
-            returnList = false
-        }
-
-        //check
-        if (!iseobj(data) && !isearr(data)) {
-            if (returnList) {
-                //輸入無效, 對齊save與del之空陣列規定
-                return []
-            }
-            return {
-                n: 0,
-                nInserted: 0,
-                ok: 1,
-            }
-        }
-
-        //cloneDeep, 與外部數據脫勾
-        data = cloneDeep(data)
-
         //res
         let res = null
         try {
+
+            //returnList, 讀取呼叫端傳入之option、判定data與cloneDeep皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01)
+            let returnList = get(option, 'returnList')
+            if (!isbol(returnList)) {
+                returnList = false
+            }
+
+            //check, 輸入無效者直接回傳, 不經catch之後之收尾且不發事件
+            if (!iseobj(data) && !isearr(data)) {
+                if (returnList) {
+                    //輸入無效, 對齊save與del之空陣列規定
+                    return []
+                }
+                return {
+                    n: 0,
+                    nInserted: 0,
+                    ok: 1,
+                }
+            }
+
+            //cloneDeep, 與外部數據脫勾, 其拋錯者(如原型為null之Date)亦走同一錯誤路徑(error事件恰一次後reject)
+            data = cloneDeep(data)
 
             //check
             if (!isarr(data)) {
@@ -705,21 +715,21 @@ function WOrmLevel(opt = {}) {
     async function insertBulkCore(data) {
         let isErr = false
 
-        //check
-        if (!iseobj(data) && !isearr(data)) {
-            return {
-                n: 0,
-                nInserted: 0,
-                ok: 1,
-            }
-        }
-
-        //cloneDeep, 與外部數據脫勾
-        data = cloneDeep(data)
-
         //res
         let res = null
         try {
+
+            //check, 判定data與cloneDeep皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01); 輸入無效者直接回傳, 不經catch之後之收尾且不發事件
+            if (!iseobj(data) && !isearr(data)) {
+                return {
+                    n: 0,
+                    nInserted: 0,
+                    ok: 1,
+                }
+            }
+
+            //cloneDeep, 與外部數據脫勾, 其拋錯者(如原型為null之Date)亦走同一錯誤路徑(error事件恰一次後reject)
+            data = cloneDeep(data)
 
             //check
             if (!isarr(data)) {
@@ -820,20 +830,20 @@ function WOrmLevel(opt = {}) {
     async function saveCore(data, option = {}) {
         let isErr = false
 
-        //check
-        if (!iseobj(data) && !isearr(data)) {
-            return []
-        }
-
-        //cloneDeep, 與外部數據脫勾
-        data = cloneDeep(data)
-
-        //autoInsert
-        let autoInsert = get(option, 'autoInsert', true)
-
         //res
         let res = null
         try {
+
+            //check, 判定data、cloneDeep與讀取呼叫端傳入之option皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01); 輸入無效者直接回傳, 不經catch之後之收尾且不發事件
+            if (!iseobj(data) && !isearr(data)) {
+                return []
+            }
+
+            //cloneDeep, 與外部數據脫勾, 其拋錯者(如原型為null之Date)亦走同一錯誤路徑(error事件恰一次後reject)
+            data = cloneDeep(data)
+
+            //autoInsert
+            let autoInsert = get(option, 'autoInsert', true)
 
             //check
             if (!isarr(data)) {
@@ -1015,17 +1025,17 @@ function WOrmLevel(opt = {}) {
     async function delCore(data) {
         let isErr = false
 
-        //check
-        if (!iseobj(data) && !isearr(data)) {
-            return []
-        }
-
-        //cloneDeep, 與外部數據脫勾
-        data = cloneDeep(data)
-
         //res
         let res = null
         try {
+
+            //check, 判定data與cloneDeep皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01); 輸入無效者直接回傳, 不經catch之後之收尾且不發事件
+            if (!iseobj(data) && !isearr(data)) {
+                return []
+            }
+
+            //cloneDeep, 與外部數據脫勾, 其拋錯者(如原型為null之Date)亦走同一錯誤路徑(error事件恰一次後reject)
+            data = cloneDeep(data)
 
             //check
             if (!isarr(data)) {
