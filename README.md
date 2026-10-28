@@ -74,6 +74,42 @@ JavaScript 字串可含孤立代理字元(lone surrogate，即成對代理被拆
 
 已知限制：`String` 包裝物件(`new String('...')`)僅檢核其字串值、不解包；`toJSON` 或自訂序列化之輸出不檢核。
 
+### 診斷輸出 (Diagnostic output)
+
+本套件唯一會自行輸出的情形，是 `change` 或 `error` 事件的訂閱函數拋錯時：錯誤被攔下(不影響該次操作的回傳，也不影響事件發出)並輸出一筆診斷。除此之外本套件不輸出任何東西(LevelDB 自身的 `LOG` 檔寫在資料庫資料夾內，不是 console，且不含資料值)。所有診斷輸出皆經單一出口 `src/getDiag.mjs`；選項名稱與 `w-serv-orm`、`w-orm-reladb` 相同，語意相同處為預設只輸出標籤與摘要、`logDetail` 還原細節、`funLog(label, safe, detail)` 取代 console 並收完整細節(遮罩拷貝)；差異處為選項型別錯誤的處置：本套件依自身慣例(同 `useCache`、`autoGenPk`)忽略並用預設，`w-serv-orm` 則 throw。
+
+| 選項 | 說明 |
+|---|---|
+| `opt.logDetail` | 布林，預設 `false`。`true` 時還原為舊版輸出 `console.log(拋出值)`(含錯誤訊息與堆疊；單一引數、無標籤)，供除錯。輸出的是拋出值的遮罩拷貝(見下) |
+| `opt.funLog` | 函數 `(label, safe, detail)`，預設無。給予時診斷輸出只交給它、不寫 console；`detail` 為訂閱函數拋出值的遮罩拷貝(含錯誤訊息；不是原參照，原地修改它不影響原物件，也不影響操作的回傳與事件參數)，供自行遮罩或轉送。與 `logDetail` 並給時以 `funLog` 為準。`funLog` 拋錯或回傳被 reject 的 promise 皆被吞下，不影響操作 |
+
+兩個選項於建構時取固定快照；型別錯誤(`logDetail` 非布林 `true`、`funLog` 非函數)或讀取該選項時拋錯者，忽略並用預設、不 throw(同 `useCache`、`autoGenPk` 型別錯誤即用預設)。
+
+預設輸出只含固定標籤與摘要：
+
+```js
+// 訂閱函數 wo.on('change', () => { throw new Error('... u-secret-001 ...') }) 拋錯時
+// 預設:
+change handler threw { mode: 'insert', errType: 'Error' }
+// error 事件之訂閱函數拋錯時: error handler threw { mode: 'insert', errType: 'Error' }
+```
+
+- `mode`：操作別。`errType`：拋出值的型別(`string`、`number`、`undefined`、`null`、`object`、`function`…)；拋出值為原生 `Error` 時為其建構子名稱(沿原型鏈取第一個資料屬性 `constructor` 的 `name`，限 `^[A-Za-z][A-Za-z0-9_]{0,39}$`，不合者——如 `_` 或 `$` 開頭、超過 40 字元、含連字號——列為 `Error`)；偵測得到 `Proxy` 者(Node 的 `util.types`)列為 `Proxy` 且不讀取其任何屬性。`errCode`：僅當拋出值的**自有資料屬性** `code` 為機器代碼(`ENOENT` 類 E 開頭純大寫字母、`E2BIG`、`ERR_xxx`、`LEVEL_xxx`、絕對值至 99999 的整數)時列出(一般物件與函數若帶此 `code` 亦同)。
+- 不含資料值、主鍵、使用者識別、錯誤訊息、堆疊與路徑；摘要與拷貝皆不執行拋出值上的存取器。
+- **資料庫位置視同連線字串**：`opt.url`、`opt.db`、`opt.cl` 組成的儲存位址(及其絕對路徑、正反斜線形式)與 `opt.url`，不進預設輸出(預設不含細節)；`logDetail` 與 `funLog` 的細節中若出現(例如後端 I/O 錯誤訊息 `IO error: <位址>/000005.ldb` 經訂閱函數轉拋)，屬性值、屬性鍵、Symbol 描述與堆疊內的該段皆以 `***` 取代。`db`、`cl` 單獨(如 `worm`、`test`)與短於 3 字元或全為路徑符號的 `url`(如 `.`)不單獨遮罩。本套件沒有帳密選項。建構函式拋出的訊息(`invalid opt.url: string contains lone surrogate` 等)為固定詞彙，不回顯值。
+- 遮罩拷貝：純物件、類別實例、陣列、`Error`(含 `message`、`stack`、`cause`、`name`)、`Date` 複製為內建原型的副本；函數、`Proxy`、二進位資料、`Map`、`Set`、`RegExp`、存取器以標記字串代替，深度超過 8 或節點超過 5000 者以 `[Truncated]` 代替；子類別 `Error` 的類別名稱以其 `name` 屬性為準(僅 `class X extends Error {}` 而未設 `name` 者輸出為 `Error`)。
+- 診斷輸出自身拋錯被吞下，不使操作拋錯：取細節拋錯時改傳 `(unprintable)`；`console.log` 拋錯時改輸出 `console.log(標籤, '(unprintable)')`，再拋則放棄。
+- `resolve`／`reject` 的內容、事件參數與發出時機不受任何診斷選項影響。各操作的 `reject`、逐筆 `err` 欄位與 `error` 事件內的訊息文字(如 `can not insertBulk by existed id[<id>]`、後端 I/O 錯誤原文)屬回傳契約，不在診斷輸出範圍。
+- 限制：不靜態引入 Node 內建模組(UMD 打包)，`util.types` 於執行期以 `process.getBuiltinModule('util')` 取得；取不到(非 Node 或舊版 Node)時無法偵測 `Proxy`、跨 realm 的 `Error` 列為 `object`，`Proxy` 的 trap 屬使用端程式，其拋錯被吞下。`errType`、`errCode` 的樣式白名單不能證明名稱或代碼不含個資(類別名與機器代碼為程式識別字)。
+
+要取得舊版的完整輸出：
+
+```js
+let wo = WOrm({ url: './_db', db: 'worm', cl: 'users', logDetail: true })
+// 或交給自己的紀錄函式
+let wo2 = WOrm({ url: './_db', db: 'worm', cl: 'users', funLog: (label, safe, detail) => { /* 自行遮罩後寫入 */ } })
+```
+
 ### 破壞性變更 (Breaking changes)
 
 原本被接受或被靜默放行之條件，現改為 reject，不設過渡期。
@@ -85,6 +121,7 @@ JavaScript 字串可含孤立代理字元(lone surrogate，即成對代理被拆
 - 改為 reject(寫入 Date 範圍，1.0.34 起)：`insert`、`insertBulk`、`save` 寫入之數據內任何深度之 `Date` 年份小於 0 或大於 9999(如以 `new Date(8.64e15)` 作「永不過期」哨兵)，原本照存為 `+yyyyyy-…`、`-yyyyyy-…` 字串(其後會被 `{ t: { $lt: 現在 } }` 因字典序命中而遭 `delAll` 刪除)，現整批 reject，訊息為 `invalid data: Date year is out of range 0000-9999 at [<路徑>]`；請改用 `null` 或 `new Date('9999-12-31T23:59:59.999Z')`。既有資料不遷移，仍有字典序風險，請自行清理或改寫(見上方「寫入數據之 Date」)。
 - 錯誤訊息為 `invalid find: <原因> at [<路徑>]`；原本由 `mingo` 拋出錯誤者，現統一為此訊息。
 - 改為 reject(字串良構)：主鍵含孤立代理字元或 NUL；寫入資料之字串值或鍵名含孤立代理字元；`opt.url`、`opt.db`、`opt.cl` 含孤立代理字元(建構時 throw)。原本主鍵之孤立代理字元被 UTF-8 改寫為 U+FFFD 而與他筆相撞(覆蓋、誤刪、誤命中)，值內孤立代理字元原照存，現皆拒收，見上節「字串良構」。`del` 未給有效 `id` 之 `err` 由 `can not delete by invalid id[<值>]` 改為 `invalid id: <原因> at [data[<k>].id]`(不回顯值)。
+- 診斷輸出預設變動：`change`／`error` 事件的訂閱函數拋錯時，原本 `console.log(拋出值)`(含錯誤訊息與堆疊，訊息可能夾帶資料值或主鍵)，現預設只輸出 `change handler threw { mode, errType }` 或 `error handler threw { mode, errType }`(`errType` 為拋出值的型別或錯誤類別名稱，另有機器代碼時列 `errCode`)；`logDetail`／`funLog` 的細節為遮罩拷貝(資料庫位置以 `***` 取代)。要取得舊版輸出請於建構時加 `logDetail: true`，或以 `funLog(label, safe, detail)` 接收完整細節；回傳(`resolve`／`reject` 內容)、事件參數與發出時機不變。見上節「診斷輸出」。
 - 修正(主鍵為 `Object.prototype` 成員名)：主鍵為 `constructor`、`toString`、`valueOf`、`hasOwnProperty`、`__proto__` 等時，原本 `insert` 回 `{ n: 1, nInserted: 0, ok: 1 }` 而靜默不寫入，`insertBulk` 誤報 `can not insertBulk by existed id[...]`，`save` 回 `nModified: 1`(實為新增)，`del` 回 `nDeleted: 1`(實未刪除任何一列)；以 `__proto__` 為主鍵之紀錄其欄位名還會被誤認為其他主鍵(同批之後筆被判已存在，`save` 時以該欄位值為現值合併而寫入損毀之紀錄)；現主鍵存在與否以 `Map` 判定，與一般字串主鍵行為相同。
 
 ## Documentation

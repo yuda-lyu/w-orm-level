@@ -1,0 +1,3268 @@
+{
+  "base|ok": {
+    "out": [
+      {
+        "ok": {
+          "n": 0,
+          "nDeleted": 0,
+          "ok": 1
+        }
+      },
+      {
+        "ok": {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nInserted": 0,
+          "ok": 1
+        }
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nInserted": 1,
+          "ok": 1
+        }
+      },
+      {
+        "err": "can not insertBulk by existed id[u-secret-001@example.com]"
+      },
+      {
+        "ok": {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          },
+          {
+            "n": 1,
+            "nInserted": 1,
+            "nModified": 0,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 0,
+            "ok": 0,
+            "err": "invalid id: string contains lone surrogate at [data[0].id]"
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "name": "auto",
+            "id": "<uuid>"
+          },
+          {
+            "id": "a2",
+            "name": "n2",
+            "value": 2
+          },
+          {
+            "id": "a3",
+            "name": "n3"
+          },
+          {
+            "id": "a9",
+            "name": "ret"
+          },
+          {
+            "id": "b1",
+            "name": "b1"
+          },
+          {
+            "id": "b2",
+            "name": "b2"
+          },
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": {
+          "id": "a2",
+          "name": "n2",
+          "value": 2
+        }
+      },
+      {
+        "ok": null
+      },
+      {
+        "err": "invalid find: unsupported operator [$foo] at [find.$foo]"
+      },
+      {
+        "err": "invalid data: Date year is out of range 0000-9999 at [data[0].t]"
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          },
+          {
+            "n": 0,
+            "nDeleted": 0,
+            "ok": 0,
+            "err": "invalid id: string is empty at [data[1].id]"
+          },
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nDeleted": 1,
+          "ok": 1
+        }
+      },
+      {
+        "err": "invalid find: unsupported operator [$foo] at [find.$foo]"
+      },
+      {
+        "ok": [
+          {
+            "name": "auto",
+            "id": "<uuid>"
+          },
+          {
+            "id": "a9",
+            "name": "ret"
+          },
+          {
+            "id": "b2",
+            "name": "b2"
+          },
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": {
+          "n": 4,
+          "nDeleted": 4,
+          "ok": 1
+        }
+      },
+      {
+        "err": "can not select by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not selectByPk by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not insert by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not insertBulk by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not save by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not del by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not delAll by closed client, instance can not be used after close()"
+      }
+    ],
+    "evs": [
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 0,
+          "nDeleted": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretName",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          },
+          {
+            "id": "a2",
+            "name": "n2",
+            "value": 2
+          }
+        ],
+        {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "dup"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a9",
+            "name": "ret"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "name": "auto",
+            "id": "<uuid>"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 1,
+          "ok": 1
+        }
+      ],
+      [
+        "error",
+        "insertBulk",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "dup"
+          }
+        ],
+        "can not insertBulk by existed id[u-secret-001@example.com]"
+      ],
+      [
+        "change",
+        "insertBulk",
+        [
+          {
+            "id": "b1",
+            "name": "b1"
+          },
+          {
+            "id": "b2",
+            "name": "b2"
+          }
+        ],
+        {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a3",
+            "name": "n3"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 1,
+          "nModified": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "save",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex"
+          },
+          {
+            "id": "a3",
+            "name": "n3"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          },
+          {
+            "n": 1,
+            "nInserted": 1,
+            "nModified": 0,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "error",
+        "save",
+        [
+          {
+            "id": "bad\ud800"
+          }
+        ],
+        "invalid id: string contains lone surrogate at [data[0].id]"
+      ],
+      [
+        "change",
+        "save",
+        [
+          {
+            "id": "bad\ud800"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 0,
+            "ok": 0,
+            "err": "invalid id: string contains lone surrogate at [data[0].id]"
+          }
+        ]
+      ],
+      [
+        "error",
+        "select",
+        null,
+        "invalid find: unsupported operator [$foo] at [find.$foo]"
+      ],
+      [
+        "error",
+        "insert",
+        [
+          {
+            "id": "d1",
+            "t": "+275760-09-13T00:00:00.000Z"
+          }
+        ],
+        "invalid data: Date year is out of range 0000-9999 at [data[0].t]"
+      ],
+      [
+        "error",
+        "del",
+        [
+          {
+            "id": ""
+          }
+        ],
+        "invalid id: string is empty at [data[1].id]"
+      ],
+      [
+        "change",
+        "del",
+        [
+          {
+            "id": "a2"
+          },
+          {
+            "id": ""
+          },
+          {
+            "id": "b1"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          },
+          {
+            "n": 0,
+            "nDeleted": 0,
+            "ok": 0,
+            "err": "invalid id: string is empty at [data[1].id]"
+          },
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 1,
+          "nDeleted": 1,
+          "ok": 1
+        }
+      ],
+      [
+        "error",
+        "delAll",
+        null,
+        "invalid find: unsupported operator [$foo] at [find.$foo]"
+      ],
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 4,
+          "nDeleted": 4,
+          "ok": 1
+        }
+      ],
+      [
+        "error",
+        "select",
+        null,
+        "can not select by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "selectByPk",
+        null,
+        "can not selectByPk by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "insert",
+        {
+          "id": "z1"
+        },
+        "can not insert by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "insertBulk",
+        [
+          {
+            "id": "z2"
+          }
+        ],
+        "can not insertBulk by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "save",
+        {
+          "id": "z3"
+        },
+        "can not save by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "del",
+        {
+          "id": "z4"
+        },
+        "can not del by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "delAll",
+        null,
+        "can not delAll by closed client, instance can not be used after close()"
+      ]
+    ]
+  },
+  "base|bad": {
+    "out": [
+      {
+        "ok": {
+          "n": 0,
+          "nDeleted": 0,
+          "ok": 1
+        }
+      },
+      {
+        "ok": {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nInserted": 0,
+          "ok": 1
+        }
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nInserted": 1,
+          "ok": 1
+        }
+      },
+      {
+        "err": "can not insertBulk by existed id[u-secret-001@example.com]"
+      },
+      {
+        "ok": {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          },
+          {
+            "n": 1,
+            "nInserted": 1,
+            "nModified": 0,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 0,
+            "ok": 0,
+            "err": "invalid id: string contains lone surrogate at [data[0].id]"
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "name": "auto",
+            "id": "<uuid>"
+          },
+          {
+            "id": "a2",
+            "name": "n2",
+            "value": 2
+          },
+          {
+            "id": "a3",
+            "name": "n3"
+          },
+          {
+            "id": "a9",
+            "name": "ret"
+          },
+          {
+            "id": "b1",
+            "name": "b1"
+          },
+          {
+            "id": "b2",
+            "name": "b2"
+          },
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": {
+          "id": "a2",
+          "name": "n2",
+          "value": 2
+        }
+      },
+      {
+        "ok": null
+      },
+      {
+        "err": "invalid find: unsupported operator [$foo] at [find.$foo]"
+      },
+      {
+        "err": "invalid data: Date year is out of range 0000-9999 at [data[0].t]"
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          },
+          {
+            "n": 0,
+            "nDeleted": 0,
+            "ok": 0,
+            "err": "invalid id: string is empty at [data[1].id]"
+          },
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nDeleted": 1,
+          "ok": 1
+        }
+      },
+      {
+        "err": "invalid find: unsupported operator [$foo] at [find.$foo]"
+      },
+      {
+        "ok": [
+          {
+            "name": "auto",
+            "id": "<uuid>"
+          },
+          {
+            "id": "a9",
+            "name": "ret"
+          },
+          {
+            "id": "b2",
+            "name": "b2"
+          },
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": {
+          "n": 4,
+          "nDeleted": 4,
+          "ok": 1
+        }
+      },
+      {
+        "err": "can not select by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not selectByPk by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not insert by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not insertBulk by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not save by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not del by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not delAll by closed client, instance can not be used after close()"
+      }
+    ],
+    "evs": [
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 0,
+          "nDeleted": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretName",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          },
+          {
+            "id": "a2",
+            "name": "n2",
+            "value": 2
+          }
+        ],
+        {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "dup"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a9",
+            "name": "ret"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "name": "auto",
+            "id": "<uuid>"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 1,
+          "ok": 1
+        }
+      ],
+      [
+        "error",
+        "insertBulk",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "dup"
+          }
+        ],
+        "can not insertBulk by existed id[u-secret-001@example.com]"
+      ],
+      [
+        "change",
+        "insertBulk",
+        [
+          {
+            "id": "b1",
+            "name": "b1"
+          },
+          {
+            "id": "b2",
+            "name": "b2"
+          }
+        ],
+        {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a3",
+            "name": "n3"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 1,
+          "nModified": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "save",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex"
+          },
+          {
+            "id": "a3",
+            "name": "n3"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          },
+          {
+            "n": 1,
+            "nInserted": 1,
+            "nModified": 0,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "error",
+        "save",
+        [
+          {
+            "id": "bad\ud800"
+          }
+        ],
+        "invalid id: string contains lone surrogate at [data[0].id]"
+      ],
+      [
+        "change",
+        "save",
+        [
+          {
+            "id": "bad\ud800"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 0,
+            "ok": 0,
+            "err": "invalid id: string contains lone surrogate at [data[0].id]"
+          }
+        ]
+      ],
+      [
+        "error",
+        "select",
+        null,
+        "invalid find: unsupported operator [$foo] at [find.$foo]"
+      ],
+      [
+        "error",
+        "insert",
+        [
+          {
+            "id": "d1",
+            "t": "+275760-09-13T00:00:00.000Z"
+          }
+        ],
+        "invalid data: Date year is out of range 0000-9999 at [data[0].t]"
+      ],
+      [
+        "error",
+        "del",
+        [
+          {
+            "id": ""
+          }
+        ],
+        "invalid id: string is empty at [data[1].id]"
+      ],
+      [
+        "change",
+        "del",
+        [
+          {
+            "id": "a2"
+          },
+          {
+            "id": ""
+          },
+          {
+            "id": "b1"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          },
+          {
+            "n": 0,
+            "nDeleted": 0,
+            "ok": 0,
+            "err": "invalid id: string is empty at [data[1].id]"
+          },
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 1,
+          "nDeleted": 1,
+          "ok": 1
+        }
+      ],
+      [
+        "error",
+        "delAll",
+        null,
+        "invalid find: unsupported operator [$foo] at [find.$foo]"
+      ],
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 4,
+          "nDeleted": 4,
+          "ok": 1
+        }
+      ],
+      [
+        "error",
+        "select",
+        null,
+        "can not select by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "selectByPk",
+        null,
+        "can not selectByPk by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "insert",
+        {
+          "id": "z1"
+        },
+        "can not insert by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "insertBulk",
+        [
+          {
+            "id": "z2"
+          }
+        ],
+        "can not insertBulk by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "save",
+        {
+          "id": "z3"
+        },
+        "can not save by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "del",
+        {
+          "id": "z4"
+        },
+        "can not del by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "delAll",
+        null,
+        "can not delAll by closed client, instance can not be used after close()"
+      ]
+    ]
+  },
+  "cache|ok": {
+    "out": [
+      {
+        "ok": {
+          "n": 0,
+          "nDeleted": 0,
+          "ok": 1
+        }
+      },
+      {
+        "ok": {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nInserted": 0,
+          "ok": 1
+        }
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nInserted": 1,
+          "ok": 1
+        }
+      },
+      {
+        "err": "can not insertBulk by existed id[u-secret-001@example.com]"
+      },
+      {
+        "ok": {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          },
+          {
+            "n": 1,
+            "nInserted": 1,
+            "nModified": 0,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 0,
+            "ok": 0,
+            "err": "invalid id: string contains lone surrogate at [data[0].id]"
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "name": "auto",
+            "id": "<uuid>"
+          },
+          {
+            "id": "a2",
+            "name": "n2",
+            "value": 2
+          },
+          {
+            "id": "a3",
+            "name": "n3"
+          },
+          {
+            "id": "a9",
+            "name": "ret"
+          },
+          {
+            "id": "b1",
+            "name": "b1"
+          },
+          {
+            "id": "b2",
+            "name": "b2"
+          },
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": {
+          "id": "a2",
+          "name": "n2",
+          "value": 2
+        }
+      },
+      {
+        "ok": null
+      },
+      {
+        "err": "invalid find: unsupported operator [$foo] at [find.$foo]"
+      },
+      {
+        "err": "invalid data: Date year is out of range 0000-9999 at [data[0].t]"
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          },
+          {
+            "n": 0,
+            "nDeleted": 0,
+            "ok": 0,
+            "err": "invalid id: string is empty at [data[1].id]"
+          },
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nDeleted": 1,
+          "ok": 1
+        }
+      },
+      {
+        "err": "invalid find: unsupported operator [$foo] at [find.$foo]"
+      },
+      {
+        "ok": [
+          {
+            "name": "auto",
+            "id": "<uuid>"
+          },
+          {
+            "id": "a9",
+            "name": "ret"
+          },
+          {
+            "id": "b2",
+            "name": "b2"
+          },
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": {
+          "n": 4,
+          "nDeleted": 4,
+          "ok": 1
+        }
+      },
+      {
+        "err": "can not select by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not selectByPk by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not insert by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not insertBulk by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not save by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not del by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not delAll by closed client, instance can not be used after close()"
+      }
+    ],
+    "evs": [
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 0,
+          "nDeleted": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretName",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          },
+          {
+            "id": "a2",
+            "name": "n2",
+            "value": 2
+          }
+        ],
+        {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "dup"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a9",
+            "name": "ret"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "name": "auto",
+            "id": "<uuid>"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 1,
+          "ok": 1
+        }
+      ],
+      [
+        "error",
+        "insertBulk",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "dup"
+          }
+        ],
+        "can not insertBulk by existed id[u-secret-001@example.com]"
+      ],
+      [
+        "change",
+        "insertBulk",
+        [
+          {
+            "id": "b1",
+            "name": "b1"
+          },
+          {
+            "id": "b2",
+            "name": "b2"
+          }
+        ],
+        {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a3",
+            "name": "n3"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 1,
+          "nModified": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "save",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex"
+          },
+          {
+            "id": "a3",
+            "name": "n3"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          },
+          {
+            "n": 1,
+            "nInserted": 1,
+            "nModified": 0,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "error",
+        "save",
+        [
+          {
+            "id": "bad\ud800"
+          }
+        ],
+        "invalid id: string contains lone surrogate at [data[0].id]"
+      ],
+      [
+        "change",
+        "save",
+        [
+          {
+            "id": "bad\ud800"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 0,
+            "ok": 0,
+            "err": "invalid id: string contains lone surrogate at [data[0].id]"
+          }
+        ]
+      ],
+      [
+        "error",
+        "select",
+        null,
+        "invalid find: unsupported operator [$foo] at [find.$foo]"
+      ],
+      [
+        "error",
+        "insert",
+        [
+          {
+            "id": "d1",
+            "t": "+275760-09-13T00:00:00.000Z"
+          }
+        ],
+        "invalid data: Date year is out of range 0000-9999 at [data[0].t]"
+      ],
+      [
+        "error",
+        "del",
+        [
+          {
+            "id": ""
+          }
+        ],
+        "invalid id: string is empty at [data[1].id]"
+      ],
+      [
+        "change",
+        "del",
+        [
+          {
+            "id": "a2"
+          },
+          {
+            "id": ""
+          },
+          {
+            "id": "b1"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          },
+          {
+            "n": 0,
+            "nDeleted": 0,
+            "ok": 0,
+            "err": "invalid id: string is empty at [data[1].id]"
+          },
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 1,
+          "nDeleted": 1,
+          "ok": 1
+        }
+      ],
+      [
+        "error",
+        "delAll",
+        null,
+        "invalid find: unsupported operator [$foo] at [find.$foo]"
+      ],
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 4,
+          "nDeleted": 4,
+          "ok": 1
+        }
+      ],
+      [
+        "error",
+        "select",
+        null,
+        "can not select by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "selectByPk",
+        null,
+        "can not selectByPk by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "insert",
+        {
+          "id": "z1"
+        },
+        "can not insert by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "insertBulk",
+        [
+          {
+            "id": "z2"
+          }
+        ],
+        "can not insertBulk by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "save",
+        {
+          "id": "z3"
+        },
+        "can not save by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "del",
+        {
+          "id": "z4"
+        },
+        "can not del by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "delAll",
+        null,
+        "can not delAll by closed client, instance can not be used after close()"
+      ]
+    ]
+  },
+  "cache|bad": {
+    "out": [
+      {
+        "ok": {
+          "n": 0,
+          "nDeleted": 0,
+          "ok": 1
+        }
+      },
+      {
+        "ok": {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nInserted": 0,
+          "ok": 1
+        }
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nInserted": 1,
+          "ok": 1
+        }
+      },
+      {
+        "err": "can not insertBulk by existed id[u-secret-001@example.com]"
+      },
+      {
+        "ok": {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          },
+          {
+            "n": 1,
+            "nInserted": 1,
+            "nModified": 0,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 0,
+            "ok": 0,
+            "err": "invalid id: string contains lone surrogate at [data[0].id]"
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "name": "auto",
+            "id": "<uuid>"
+          },
+          {
+            "id": "a2",
+            "name": "n2",
+            "value": 2
+          },
+          {
+            "id": "a3",
+            "name": "n3"
+          },
+          {
+            "id": "a9",
+            "name": "ret"
+          },
+          {
+            "id": "b1",
+            "name": "b1"
+          },
+          {
+            "id": "b2",
+            "name": "b2"
+          },
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": {
+          "id": "a2",
+          "name": "n2",
+          "value": 2
+        }
+      },
+      {
+        "ok": null
+      },
+      {
+        "err": "invalid find: unsupported operator [$foo] at [find.$foo]"
+      },
+      {
+        "err": "invalid data: Date year is out of range 0000-9999 at [data[0].t]"
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          },
+          {
+            "n": 0,
+            "nDeleted": 0,
+            "ok": 0,
+            "err": "invalid id: string is empty at [data[1].id]"
+          },
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nDeleted": 1,
+          "ok": 1
+        }
+      },
+      {
+        "err": "invalid find: unsupported operator [$foo] at [find.$foo]"
+      },
+      {
+        "ok": [
+          {
+            "name": "auto",
+            "id": "<uuid>"
+          },
+          {
+            "id": "a9",
+            "name": "ret"
+          },
+          {
+            "id": "b2",
+            "name": "b2"
+          },
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": {
+          "n": 4,
+          "nDeleted": 4,
+          "ok": 1
+        }
+      },
+      {
+        "err": "can not select by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not selectByPk by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not insert by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not insertBulk by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not save by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not del by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not delAll by closed client, instance can not be used after close()"
+      }
+    ],
+    "evs": [
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 0,
+          "nDeleted": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretName",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          },
+          {
+            "id": "a2",
+            "name": "n2",
+            "value": 2
+          }
+        ],
+        {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "dup"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a9",
+            "name": "ret"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "name": "auto",
+            "id": "<uuid>"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 1,
+          "ok": 1
+        }
+      ],
+      [
+        "error",
+        "insertBulk",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "dup"
+          }
+        ],
+        "can not insertBulk by existed id[u-secret-001@example.com]"
+      ],
+      [
+        "change",
+        "insertBulk",
+        [
+          {
+            "id": "b1",
+            "name": "b1"
+          },
+          {
+            "id": "b2",
+            "name": "b2"
+          }
+        ],
+        {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a3",
+            "name": "n3"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 1,
+          "nModified": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "save",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex"
+          },
+          {
+            "id": "a3",
+            "name": "n3"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          },
+          {
+            "n": 1,
+            "nInserted": 1,
+            "nModified": 0,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "error",
+        "save",
+        [
+          {
+            "id": "bad\ud800"
+          }
+        ],
+        "invalid id: string contains lone surrogate at [data[0].id]"
+      ],
+      [
+        "change",
+        "save",
+        [
+          {
+            "id": "bad\ud800"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 0,
+            "ok": 0,
+            "err": "invalid id: string contains lone surrogate at [data[0].id]"
+          }
+        ]
+      ],
+      [
+        "error",
+        "select",
+        null,
+        "invalid find: unsupported operator [$foo] at [find.$foo]"
+      ],
+      [
+        "error",
+        "insert",
+        [
+          {
+            "id": "d1",
+            "t": "+275760-09-13T00:00:00.000Z"
+          }
+        ],
+        "invalid data: Date year is out of range 0000-9999 at [data[0].t]"
+      ],
+      [
+        "error",
+        "del",
+        [
+          {
+            "id": ""
+          }
+        ],
+        "invalid id: string is empty at [data[1].id]"
+      ],
+      [
+        "change",
+        "del",
+        [
+          {
+            "id": "a2"
+          },
+          {
+            "id": ""
+          },
+          {
+            "id": "b1"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          },
+          {
+            "n": 0,
+            "nDeleted": 0,
+            "ok": 0,
+            "err": "invalid id: string is empty at [data[1].id]"
+          },
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 1,
+          "nDeleted": 1,
+          "ok": 1
+        }
+      ],
+      [
+        "error",
+        "delAll",
+        null,
+        "invalid find: unsupported operator [$foo] at [find.$foo]"
+      ],
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 4,
+          "nDeleted": 4,
+          "ok": 1
+        }
+      ],
+      [
+        "error",
+        "select",
+        null,
+        "can not select by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "selectByPk",
+        null,
+        "can not selectByPk by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "insert",
+        {
+          "id": "z1"
+        },
+        "can not insert by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "insertBulk",
+        [
+          {
+            "id": "z2"
+          }
+        ],
+        "can not insertBulk by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "save",
+        {
+          "id": "z3"
+        },
+        "can not save by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "del",
+        {
+          "id": "z4"
+        },
+        "can not del by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "delAll",
+        null,
+        "can not delAll by closed client, instance can not be used after close()"
+      ]
+    ]
+  },
+  "nopk|ok": {
+    "out": [
+      {
+        "ok": {
+          "n": 0,
+          "nDeleted": 0,
+          "ok": 1
+        }
+      },
+      {
+        "ok": {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nInserted": 0,
+          "ok": 1
+        }
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "err": "can not insert by data[0] without valid id when autoGenPk is false"
+      },
+      {
+        "err": "can not insertBulk by existed id[u-secret-001@example.com]"
+      },
+      {
+        "ok": {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          },
+          {
+            "n": 1,
+            "nInserted": 1,
+            "nModified": 0,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 0,
+            "ok": 0,
+            "err": "invalid id: string contains lone surrogate at [data[0].id]"
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "id": "a2",
+            "name": "n2",
+            "value": 2
+          },
+          {
+            "id": "a3",
+            "name": "n3"
+          },
+          {
+            "id": "a9",
+            "name": "ret"
+          },
+          {
+            "id": "b1",
+            "name": "b1"
+          },
+          {
+            "id": "b2",
+            "name": "b2"
+          },
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": {
+          "id": "a2",
+          "name": "n2",
+          "value": 2
+        }
+      },
+      {
+        "ok": null
+      },
+      {
+        "err": "invalid find: unsupported operator [$foo] at [find.$foo]"
+      },
+      {
+        "err": "invalid data: Date year is out of range 0000-9999 at [data[0].t]"
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          },
+          {
+            "n": 0,
+            "nDeleted": 0,
+            "ok": 0,
+            "err": "invalid id: string is empty at [data[1].id]"
+          },
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nDeleted": 1,
+          "ok": 1
+        }
+      },
+      {
+        "err": "invalid find: unsupported operator [$foo] at [find.$foo]"
+      },
+      {
+        "ok": [
+          {
+            "id": "a9",
+            "name": "ret"
+          },
+          {
+            "id": "b2",
+            "name": "b2"
+          },
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": {
+          "n": 3,
+          "nDeleted": 3,
+          "ok": 1
+        }
+      },
+      {
+        "err": "can not select by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not selectByPk by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not insert by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not insertBulk by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not save by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not del by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not delAll by closed client, instance can not be used after close()"
+      }
+    ],
+    "evs": [
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 0,
+          "nDeleted": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretName",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          },
+          {
+            "id": "a2",
+            "name": "n2",
+            "value": 2
+          }
+        ],
+        {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "dup"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a9",
+            "name": "ret"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "error",
+        "insert",
+        [
+          {
+            "name": "auto"
+          }
+        ],
+        "can not insert by data[0] without valid id when autoGenPk is false"
+      ],
+      [
+        "error",
+        "insertBulk",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "dup"
+          }
+        ],
+        "can not insertBulk by existed id[u-secret-001@example.com]"
+      ],
+      [
+        "change",
+        "insertBulk",
+        [
+          {
+            "id": "b1",
+            "name": "b1"
+          },
+          {
+            "id": "b2",
+            "name": "b2"
+          }
+        ],
+        {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a3",
+            "name": "n3"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 1,
+          "nModified": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "save",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex"
+          },
+          {
+            "id": "a3",
+            "name": "n3"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          },
+          {
+            "n": 1,
+            "nInserted": 1,
+            "nModified": 0,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "error",
+        "save",
+        [
+          {
+            "id": "bad\ud800"
+          }
+        ],
+        "invalid id: string contains lone surrogate at [data[0].id]"
+      ],
+      [
+        "change",
+        "save",
+        [
+          {
+            "id": "bad\ud800"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 0,
+            "ok": 0,
+            "err": "invalid id: string contains lone surrogate at [data[0].id]"
+          }
+        ]
+      ],
+      [
+        "error",
+        "select",
+        null,
+        "invalid find: unsupported operator [$foo] at [find.$foo]"
+      ],
+      [
+        "error",
+        "insert",
+        [
+          {
+            "id": "d1",
+            "t": "+275760-09-13T00:00:00.000Z"
+          }
+        ],
+        "invalid data: Date year is out of range 0000-9999 at [data[0].t]"
+      ],
+      [
+        "error",
+        "del",
+        [
+          {
+            "id": ""
+          }
+        ],
+        "invalid id: string is empty at [data[1].id]"
+      ],
+      [
+        "change",
+        "del",
+        [
+          {
+            "id": "a2"
+          },
+          {
+            "id": ""
+          },
+          {
+            "id": "b1"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          },
+          {
+            "n": 0,
+            "nDeleted": 0,
+            "ok": 0,
+            "err": "invalid id: string is empty at [data[1].id]"
+          },
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 1,
+          "nDeleted": 1,
+          "ok": 1
+        }
+      ],
+      [
+        "error",
+        "delAll",
+        null,
+        "invalid find: unsupported operator [$foo] at [find.$foo]"
+      ],
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 3,
+          "nDeleted": 3,
+          "ok": 1
+        }
+      ],
+      [
+        "error",
+        "select",
+        null,
+        "can not select by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "selectByPk",
+        null,
+        "can not selectByPk by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "insert",
+        {
+          "id": "z1"
+        },
+        "can not insert by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "insertBulk",
+        [
+          {
+            "id": "z2"
+          }
+        ],
+        "can not insertBulk by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "save",
+        {
+          "id": "z3"
+        },
+        "can not save by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "del",
+        {
+          "id": "z4"
+        },
+        "can not del by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "delAll",
+        null,
+        "can not delAll by closed client, instance can not be used after close()"
+      ]
+    ]
+  },
+  "nopk|bad": {
+    "out": [
+      {
+        "ok": {
+          "n": 0,
+          "nDeleted": 0,
+          "ok": 1
+        }
+      },
+      {
+        "ok": {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nInserted": 0,
+          "ok": 1
+        }
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "err": "can not insert by data[0] without valid id when autoGenPk is false"
+      },
+      {
+        "err": "can not insertBulk by existed id[u-secret-001@example.com]"
+      },
+      {
+        "ok": {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          },
+          {
+            "n": 1,
+            "nInserted": 1,
+            "nModified": 0,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 0,
+            "ok": 0,
+            "err": "invalid id: string contains lone surrogate at [data[0].id]"
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "id": "a2",
+            "name": "n2",
+            "value": 2
+          },
+          {
+            "id": "a3",
+            "name": "n3"
+          },
+          {
+            "id": "a9",
+            "name": "ret"
+          },
+          {
+            "id": "b1",
+            "name": "b1"
+          },
+          {
+            "id": "b2",
+            "name": "b2"
+          },
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": {
+          "id": "a2",
+          "name": "n2",
+          "value": 2
+        }
+      },
+      {
+        "ok": null
+      },
+      {
+        "err": "invalid find: unsupported operator [$foo] at [find.$foo]"
+      },
+      {
+        "err": "invalid data: Date year is out of range 0000-9999 at [data[0].t]"
+      },
+      {
+        "ok": [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          },
+          {
+            "n": 0,
+            "nDeleted": 0,
+            "ok": 0,
+            "err": "invalid id: string is empty at [data[1].id]"
+          },
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          }
+        ]
+      },
+      {
+        "ok": {
+          "n": 1,
+          "nDeleted": 1,
+          "ok": 1
+        }
+      },
+      {
+        "err": "invalid find: unsupported operator [$foo] at [find.$foo]"
+      },
+      {
+        "ok": [
+          {
+            "id": "a9",
+            "name": "ret"
+          },
+          {
+            "id": "b2",
+            "name": "b2"
+          },
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          }
+        ]
+      },
+      {
+        "ok": {
+          "n": 3,
+          "nDeleted": 3,
+          "ok": 1
+        }
+      },
+      {
+        "err": "can not select by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not selectByPk by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not insert by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not insertBulk by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not save by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not del by closed client, instance can not be used after close()"
+      },
+      {
+        "err": "can not delAll by closed client, instance can not be used after close()"
+      }
+    ],
+    "evs": [
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 0,
+          "nDeleted": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretName",
+            "value": 1,
+            "t": "2026-01-02T03:04:05.678Z"
+          },
+          {
+            "id": "a2",
+            "name": "n2",
+            "value": 2
+          }
+        ],
+        {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "dup"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a9",
+            "name": "ret"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "error",
+        "insert",
+        [
+          {
+            "name": "auto"
+          }
+        ],
+        "can not insert by data[0] without valid id when autoGenPk is false"
+      ],
+      [
+        "error",
+        "insertBulk",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "dup"
+          }
+        ],
+        "can not insertBulk by existed id[u-secret-001@example.com]"
+      ],
+      [
+        "change",
+        "insertBulk",
+        [
+          {
+            "id": "b1",
+            "name": "b1"
+          },
+          {
+            "id": "b2",
+            "name": "b2"
+          }
+        ],
+        {
+          "n": 2,
+          "nInserted": 2,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "insert",
+        [
+          {
+            "id": "a3",
+            "name": "n3"
+          }
+        ],
+        {
+          "n": 1,
+          "nInserted": 1,
+          "nModified": 0,
+          "ok": 1
+        }
+      ],
+      [
+        "change",
+        "save",
+        [
+          {
+            "id": "u-secret-001@example.com",
+            "name": "AliceSecretNamex"
+          },
+          {
+            "id": "a3",
+            "name": "n3"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 1,
+            "ok": 1
+          },
+          {
+            "n": 1,
+            "nInserted": 1,
+            "nModified": 0,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "error",
+        "save",
+        [
+          {
+            "id": "bad\ud800"
+          }
+        ],
+        "invalid id: string contains lone surrogate at [data[0].id]"
+      ],
+      [
+        "change",
+        "save",
+        [
+          {
+            "id": "bad\ud800"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nInserted": 0,
+            "nModified": 0,
+            "ok": 0,
+            "err": "invalid id: string contains lone surrogate at [data[0].id]"
+          }
+        ]
+      ],
+      [
+        "error",
+        "select",
+        null,
+        "invalid find: unsupported operator [$foo] at [find.$foo]"
+      ],
+      [
+        "error",
+        "insert",
+        [
+          {
+            "id": "d1",
+            "t": "+275760-09-13T00:00:00.000Z"
+          }
+        ],
+        "invalid data: Date year is out of range 0000-9999 at [data[0].t]"
+      ],
+      [
+        "error",
+        "del",
+        [
+          {
+            "id": ""
+          }
+        ],
+        "invalid id: string is empty at [data[1].id]"
+      ],
+      [
+        "change",
+        "del",
+        [
+          {
+            "id": "a2"
+          },
+          {
+            "id": ""
+          },
+          {
+            "id": "b1"
+          }
+        ],
+        [
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          },
+          {
+            "n": 0,
+            "nDeleted": 0,
+            "ok": 0,
+            "err": "invalid id: string is empty at [data[1].id]"
+          },
+          {
+            "n": 1,
+            "nDeleted": 1,
+            "ok": 1
+          }
+        ]
+      ],
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 1,
+          "nDeleted": 1,
+          "ok": 1
+        }
+      ],
+      [
+        "error",
+        "delAll",
+        null,
+        "invalid find: unsupported operator [$foo] at [find.$foo]"
+      ],
+      [
+        "change",
+        "delAll",
+        null,
+        {
+          "n": 3,
+          "nDeleted": 3,
+          "ok": 1
+        }
+      ],
+      [
+        "error",
+        "select",
+        null,
+        "can not select by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "selectByPk",
+        null,
+        "can not selectByPk by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "insert",
+        {
+          "id": "z1"
+        },
+        "can not insert by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "insertBulk",
+        [
+          {
+            "id": "z2"
+          }
+        ],
+        "can not insertBulk by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "save",
+        {
+          "id": "z3"
+        },
+        "can not save by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "del",
+        {
+          "id": "z4"
+        },
+        "can not del by closed client, instance can not be used after close()"
+      ],
+      [
+        "error",
+        "delAll",
+        null,
+        "can not delAll by closed client, instance can not be used after close()"
+      ]
+    ]
+  }
+}

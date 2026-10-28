@@ -20,6 +20,7 @@ import waitFun from 'wsemi/src/waitFun.mjs'
 import cvOrmFind from 'wsemi/src/cvOrmFind.mjs'
 import chkOrmStr from 'wsemi/src/chkOrmStr.mjs'
 import chkOrmData from 'wsemi/src/chkOrmData.mjs'
+import { getOptLog, getSecrets, getDiag, getBriefErr } from './getDiag.mjs'
 
 
 /**
@@ -61,6 +62,21 @@ import chkOrmData from 'wsemi/src/chkOrmData.mjs'
  * 原因為string contains lone surrogate、string contains NUL(僅主鍵)、not a string或string is empty(del之id未給、非字串或空字串)。
  * U+FFFD本身與成對代理(emoji等)為良構，照常接受。既有資料不遷移，檢出與清除法見README。
  *
+ * 診斷輸出(w-orm系列規則，選項名稱與語意同w-serv-orm): 本套件唯一會自行輸出之情形，是change或error事件之訂閱函數拋錯被攔下時
+ * (攔下後不影響本次操作之回傳與事件發出)，所有輸出皆經單一出口(src/getDiag.mjs)，其餘情形不輸出：
+ * 1. 預設只輸出固定標籤與不含個資之摘要，如console.log('change handler threw', { mode: 'insert', errType: 'Error' })與console.log('error handler threw', { mode, errType, errCode })，
+ * 標籤為change handler threw或error handler threw，mode為操作別，errType為拋出值之型別(string、number、object等)或錯誤類別名稱(建構子名稱，限識別字樣式^[A-Za-z][A-Za-z0-9_]{0,39}$，不合者列為Error)，
+ * errCode僅在拋出值之自有資料屬性code為機器代碼(ENOENT類之E開頭純大寫字母、E2BIG、ERR_xxx、LEVEL_xxx、絕對值至99999之整數)時列出；
+ * 不含資料值、主鍵、使用者識別、錯誤訊息、堆疊與路徑，亦不執行拋出值上之存取器。
+ * 2. opt.logDetail為true時，還原為舊版輸出console.log(拋出值)(含錯誤訊息與堆疊，單一引數、無標籤)，供除錯；輸出的是拋出值之遮罩拷貝(見下述第5點)。
+ * 3. opt.funLog為函數時，診斷輸出只交給它而不寫console，呼叫為funLog(label, safe, detail)：label為上述標籤，safe為上述摘要，detail為訂閱函數拋出值之遮罩拷貝(含錯誤訊息，供使用端自行遮罩或轉送；拷貝不改動原物件，原地修改它不影響操作之回傳與事件參數)；
+ * 與logDetail並給時以funLog為準。funLog拋錯、回傳之promise被reject皆被吞下，不影響操作。
+ * 4. opt.logDetail與opt.funLog於建構時取固定快照；型別錯誤(logDetail非布林true、funLog非函數)者忽略並用預設，不throw(同useCache、autoGenPk)；讀取該選項拋錯者亦同。
+ * 5. 資料庫位置(opt.url、opt.db、opt.cl組成之儲存位址，及其絕對路徑與正反斜線形式)視同連線字串：預設輸出不含細節，logDetail與funLog之細節中出現者(如後端I/O錯誤訊息經訂閱函數轉拋)以***取代，屬性值、屬性鍵與Symbol描述皆然；本套件無帳密選項。
+ * 遮罩拷貝複製純物件、類別實例、陣列、Error與Date為內建原型之副本(不呼叫存取器與建構子)，函數、Proxy、二進位資料、Map與Set等以標記字串代替，深度超過8或節點超過5000者以[Truncated]代替。
+ * 註: 診斷輸出自身拋錯(如拋出值無法被格式化)被吞下，不使操作拋錯(格式化失敗時改輸出標籤與(unprintable))；各操作之resolve與reject內容、事件參數與發出時機不受任何診斷選項影響。
+ * 註: 各操作reject、逐筆err欄位與error事件內之訊息文字(如can not insertBulk by existed id[...]、後端I/O錯誤原文)屬回傳契約，不在診斷輸出之範圍，訂閱函數自行轉拋時該文字會出現在其拋出值中(位址名稱於logDetail與funLog之細節遮罩)。
+ *
  * @class
  * @param {Object} [opt={}] 輸入設定物件，預設{}
  * @param {String} [opt.url='./_db'] 輸入資料庫用資料夾字串，預設'./_db'；含孤立代理字元者建構時throw
@@ -68,6 +84,8 @@ import chkOrmData from 'wsemi/src/chkOrmData.mjs'
  * @param {String} [opt.cl='test'] 輸入使用資料表名稱字串，預設'test'；含孤立代理字元者建構時throw
  * @param {Boolean} [opt.useCache=false] 輸入是否使用select快取，適用於單程序操作，預設false
  * @param {Boolean} [opt.autoGenPk=true] 輸入insert、insertBulk與save於數據未帶有效主鍵(本套件為id欄位)時是否自動產生主鍵值，預設true；給false代表主鍵改由呼叫端自備，套件不產生亦不檢查其唯一性與格式，未帶有效主鍵者將reject
+ * @param {Boolean} [opt.logDetail=false] 輸入診斷輸出是否還原為舊版含錯誤原文之完整細節，預設false(只輸出標籤與不含個資之摘要)，見上述診斷輸出
+ * @param {Function} [opt.funLog] 輸入使用端提供之紀錄函式(label, safe, detail)，預設無；給予時診斷輸出只交給它而不寫console，見上述診斷輸出
  * @returns {Object} 回傳操作資料庫物件，各事件功能詳見說明
  */
 function WOrmLevel(opt = {}) {
@@ -123,6 +141,12 @@ function WOrmLevel(opt = {}) {
     if (!isbol(autoGenPk)) {
         autoGenPk = true
     }
+
+    //diag, 診斷輸出之單一出口(帳本R-DIAG-01), src內不得直接呼叫console; 預設只輸出固定標籤與不含個資之摘要,
+    //opt.logDetail為true還原舊版輸出(含錯誤原文), opt.funLog(label, safe, detail)給予時取代console收完整細節;
+    //opt.logDetail與opt.funLog型別錯誤者忽略並用預設(同useCache、autoGenPk), 於此取固定快照, 其後各路徑不再讀取使用端的opt;
+    //資料庫位置(url、db、cl組成之儲存位址)視同連線字串: diag不收它, 且細節(logDetail與funLog)中出現者以***遮罩(getSecrets), 故任何輸出管道皆不含位址名稱
+    let diag = getDiag(getOptLog(opt), getSecrets(url, db, cl))
 
     //storage
     let storage = `${url}/${db}/${cl}`
@@ -353,7 +377,7 @@ function WOrmLevel(opt = {}) {
             ee.emit('change', mode, data, res)
         }
         catch (err) {
-            console.log(err)
+            diag('change handler threw', { mode, ...getBriefErr(err) }, () => err, true)
         }
     }
 
@@ -371,7 +395,7 @@ function WOrmLevel(opt = {}) {
             ee.emit('error', mode, data, msg)
         }
         catch (errEmit) {
-            console.log(errEmit)
+            diag('error handler threw', { mode, ...getBriefErr(errEmit) }, () => errEmit, true)
         }
     }
 
