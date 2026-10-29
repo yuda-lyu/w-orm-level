@@ -2,16 +2,16 @@ import assert from 'assert'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { inspect } from 'util'
+import { inspect, types } from 'util'
 import WOrm from '../src/WOrmLevel.mjs'
-import { TYPES } from '../src/getDiag.mjs'
 import { ID, NAME, LISTENER_MSG, scenario } from './tools/diagScenario.mjs'
 import { CONFIGS } from './tools/diagConfigs.mjs'
 import { capture, dump, tick } from './tools/diagCapture.mjs'
 
 
-//診斷輸出(帳本R-DIAG-01)之整合測試: 真LevelDB、真訂閱函數拋錯, 擷取console與funLog實際收到之內容
-//規則: ②預設只輸出標籤與不含個資之摘要; ③opt.logDetail還原細節(舊版console.log(拋出值))、opt.funLog(label, safe, detail)取代console、型別錯誤用預設;
+//診斷輸出(帳本R-DIAG-01)之接線測試: 真LevelDB、真訂閱函數拋錯, 擷取console與funLog實際收到之內容
+//遮罩、摘要與出口之形態測試已移至wsemi之共用語料(wsemi/src/_diagCases.mjs, 見api-diagwire.test.mjs之語料驅動), 本檔只確認本套件之站點有接上wsemi之getDiag
+//規則: ②預設只輸出標籤與不含個資之摘要; ③opt.logDetail改輸出遮罩後細節(console.log(標籤, 細節))、opt.funLog(label, safe, detail)取代console、型別錯誤用預設;
 //④回傳契約不變(resolve/reject內容、事件payload與順序, 對照修改前git HEAD程式產生之diagGolden.json); ⑤資料庫位置(opt.url、opt.db、opt.cl)視同連線字串, 不入預設輸出, 於細節(logDetail與funLog)遮罩, 建構函式訊息為固定詞彙;
 //⑥診斷輸出自身不使操作拋錯、不執行使用端getter
 //change與error兩個站點對稱測試: 凡拋出值型態、選項、快照、輸出自身拋錯之案, 兩個站點皆跑
@@ -96,7 +96,7 @@ describe('api-diaglog', function() {
         })
 
         for (let site of Object.keys(SITES)) {
-            it(`${site}站: 訂閱函數拋出之各型態: 摘要只列型別與機器代碼, 不執行getter`, async function() {
+            it(`${site}站: 訂閱函數拋出之各型態(接線: 本套件宣告codes:['level']): 摘要只列型別與機器代碼, 不執行getter`, async function() {
                 let cnt = 0
                 let hit = () => {
                     cnt++
@@ -116,24 +116,21 @@ describe('api-diaglog', function() {
                         return ID
                     },
                 })
+                //代碼集合: wsemi恆含之系統代碼(ENOENT)與本套件宣告之level集合(LEVEL_xxx)收; 未宣告之集合(如mssql之整數4060)與未明列者(ERR_X)不收; 其餘形態(代碼樣式、非物件值、Proxy細節)由wsemi之共用語料驅動
                 let table = [
                     [new Error(ID), { errType: 'Error' }],
                     [new RangeError(ID), { errType: 'RangeError' }],
-                    [new SubCodeError(ID), { errType: 'SubCodeError' }],
+                    [new SubCodeError(ID), { errType: 'Error' }],
                     [Object.assign(new Error(ID), { code: 'ENOENT' }), { errType: 'Error', errCode: 'ENOENT' }],
                     [Object.assign(new Error(ID), { code: 'LEVEL_DATABASE_NOT_OPEN' }), { errType: 'Error', errCode: 'LEVEL_DATABASE_NOT_OPEN' }],
-                    [Object.assign(new Error(ID), { code: 4060 }), { errType: 'Error', errCode: 4060 }],
+                    [Object.assign(new Error(ID), { code: 4060 }), { errType: 'Error' }],
                     [Object.assign(new Error(ID), { code: ID }), { errType: 'Error' }],
-                    [Object.assign(new Error(ID), { code: 'E123456789' }), { errType: 'Error' }],
-                    [Object.assign(new Error(ID), { code: 123456789 }), { errType: 'Error' }],
                     [ID, { errType: 'string' }],
-                    [42, { errType: 'number' }],
                     [undefined, { errType: 'undefined' }],
-                    [null, { errType: 'null' }],
-                    [{ message: ID, code: 'ERR_X' }, { errType: 'object', errCode: 'ERR_X' }],
+                    [{ message: ID, code: 'ERR_X' }, { errType: 'object' }],
                     [oddVal, { errType: 'object' }],
                     [errWithGetter, { errType: 'Error' }],
-                    [px, { errType: TYPES.isProxy(px) ? 'Proxy' : 'Error' }],
+                    [px, { errType: types.isProxy(px) ? 'Proxy' : 'Error' }],
                 ]
                 let cur = null
                 let wo = WOrm(mkOpt())
@@ -153,7 +150,7 @@ describe('api-diaglog', function() {
                 finally {
                     await wo.close()
                 }
-                if (TYPES.isProxy(px)) {
+                if (types.isProxy(px)) {
                     assert.strictEqual(cnt, 0)
                 }
             })
@@ -323,18 +320,20 @@ describe('api-diaglog', function() {
     })
 
 
-    describe('logDetail(規則③): 還原舊版輸出', function() {
+    describe('logDetail(規則③): 輸出遮罩後細節', function() {
 
-        it('logDetail:true: 每次拋錯輸出console.log(拋出值)(單一引數、無標籤), 內容為拋出錯誤之拷貝(含訊息與堆疊), 與修改前之輸出格式相同', async function() {
+        it('logDetail:true: 每次拋錯輸出console.log(標籤, 細節)(兩個引數; 修改前為單一引數、無標籤, 見README Breaking changes), 細節為拋出錯誤之拷貝(含訊息與堆疊)', async function() {
             let r = await capture(() => scenario(WOrm, mkOpt({ logDetail: true }), true))
             assert.strictEqual(r.calls.length, r.result.evs.length)
-            for (let c of r.calls) {
+            r.calls.forEach((c, k) => {
+                let [kind] = r.result.evs[k]
                 assert.strictEqual(c.fn, 'console.log')
-                assert.strictEqual(c.args.length, 1)
-                assert.ok(c.args[0] instanceof Error)
-                assert.strictEqual(c.args[0].message, LISTENER_MSG)
-                assert.ok(inspect(c.args[0]).startsWith(`Error: ${LISTENER_MSG}\n    at `))
-            }
+                assert.strictEqual(c.args.length, 2)
+                assert.strictEqual(c.args[0], kind === 'change' ? 'change handler threw' : 'error handler threw')
+                assert.ok(c.args[1] instanceof Error)
+                assert.strictEqual(c.args[1].message, LISTENER_MSG)
+                assert.ok(inspect(c.args[1]).startsWith(`Error: ${LISTENER_MSG}\n    at `))
+            })
         })
 
         for (let site of Object.keys(SITES)) {
@@ -352,12 +351,13 @@ describe('api-diaglog', function() {
                         let r = await capture(() => SITES[site].trigger(wo, out.length))
                         out.push(r.calls)
                     }
+                    let lb = SITES[site].label
                     assert.deepStrictEqual(out, [
-                        [{ fn: 'console.log', args: [ID] }],
-                        [{ fn: 'console.log', args: [{ id: ID, nest: { a: 1 } }] }],
-                        [{ fn: 'console.log', args: [42] }],
+                        [{ fn: 'console.log', args: [lb, ID] }],
+                        [{ fn: 'console.log', args: [lb, { id: ID, nest: { a: 1 } }] }],
+                        [{ fn: 'console.log', args: [lb, 42] }],
                     ])
-                    assert.notStrictEqual(out[1][0].args[0], obj)
+                    assert.notStrictEqual(out[1][0].args[1], obj)
                 }
                 finally {
                     await wo.close()
@@ -425,7 +425,7 @@ describe('api-diaglog', function() {
                     }
                 })
                 assert.strictEqual(r2.calls.length, 1)
-                assert.ok(r2.calls[0].args[0] instanceof Error)
+                assert.ok(r2.calls[0].args[1] instanceof Error)
             })
 
             it(`${site}站: 選項於建構時取固定快照: 其後改動opt不影響輸出`, async function() {

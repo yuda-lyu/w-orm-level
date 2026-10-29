@@ -119,6 +119,8 @@ describe('write-pre-error', function() {
         { key: 'undefined', mk: () => undefined, msg: 'undefined' },
         { key: 'null-proto object (not convertible to string)', mk: () => Object.create(null), msg: 'unknown error' },
         {
+            //帳本R-DIAG-01(規格D3、D4 fail-closed): 外來值帶自有存取器者無法在不執行使用端程式下檢查, 視為需處理, reject與事件交出遮罩副本(存取器以[Getter/Setter]標記),
+            //使用端之message存取器不再被本套件執行(原由getErrMsg執行而拋錯, 訊息為unknown error); 此為R-WRITE-ERR-01規則1[reject之值為拋出者本身]之唯一例外(其餘形態仍為本身)
             key: 'object whose message getter throws',
             mk: () => {
                 return {
@@ -127,7 +129,8 @@ describe('write-pre-error', function() {
                     },
                 }
             },
-            msg: 'unknown error',
+            msg: '[Getter/Setter]',
+            copied: true,
         },
         {
             key: 'object whose toString throws',
@@ -270,7 +273,15 @@ describe('write-pre-error', function() {
                     let d = [{ id: 'z1', secret: MARK, o: throwingGetter(thrown) }]
                     let out = await ob.run(() => entry.call(wo, d))
                     let ev = chkEv(out, entry)
-                    assert.strict.ok(Object.is(out.err, thrown), `${entry.fn} should reject with the thrown value itself`)
+                    if (tv.copied === true) {
+                        //外來值帶自有存取器: 遮罩副本(非拋出者本身), 存取器未被執行
+                        assert.strict.ok(!Object.is(out.err, thrown), `${entry.fn} should reject with a masked copy (own accessor, fail-closed)`)
+                        assert.strict.equal(out.err !== null && typeof out.err === 'object', true)
+                        assert.strict.equal(out.err.message, '[Getter/Setter]')
+                    }
+                    else {
+                        assert.strict.ok(Object.is(out.err, thrown), `${entry.fn} should reject with the thrown value itself`)
+                    }
                     assert.strict.equal(typeof ev.err, 'string', `${entry.fn} error event message should be a string`)
                     assert.strict.equal(ev.err, tv.msg, `${entry.fn} error event message`)
                     assert.strict.ok(!ev.err.includes(MARK), `${entry.fn} message should not echo data values`)
