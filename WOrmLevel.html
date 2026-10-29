@@ -108,28 +108,30 @@ insert、insertBulk、save與del因輸入本身導致之失敗(如原型為null�
 原因為string contains lone surrogate、string contains NUL(僅主鍵)、not a string或string is empty(del之id未給、非字串或空字串)。
 U+FFFD本身與成對代理(emoji等)為良構，照常接受。既有資料不遷移，檢出與清除法見README。</li>
 </ol>
-<p>診斷輸出(w-orm系列規則，選項名稱與語意同w-serv-orm): 本套件唯一會自行輸出之情形，是change或error事件之訂閱函數拋錯被攔下時
-(攔下後不影響本次操作之回傳與事件發出)，所有輸出皆經單一出口(src/getDiag.mjs)，其餘情形不輸出：</p>
+<p>診斷輸出與遮罩(w-orm系列規則，選項名稱與語意同w-serv-orm；遮罩、摘要與出口皆用wsemi之共用實作getDiag，規則見wsemi之getDiag說明與規格〈診斷輸出與遮罩〉)：
+本套件唯一會自行輸出之情形，是change或error事件之訂閱函數拋錯被攔下時(攔下後不影響本次操作之回傳與事件發出)，所有輸出皆經單一出口(wsemi之getDiag)，其餘情形不輸出：</p>
 <ol>
 <li>預設只輸出固定標籤與不含個資之摘要，如console.log('change handler threw', { mode: 'insert', errType: 'Error' })與console.log('error handler threw', { mode, errType, errCode })，
-標籤為change handler threw或error handler threw，mode為操作別，errType為拋出值之型別(string、number、object等)或錯誤類別名稱(建構子名稱，限識別字樣式^[A-Za-z][A-Za-z0-9_]{0,39}$，不合者列為Error)，
-errCode僅在拋出值之自有資料屬性code為機器代碼(ENOENT類之E開頭純大寫字母、E2BIG、ERR_xxx、LEVEL_xxx、絕對值至99999之整數)時列出；
+標籤為change handler threw或error handler threw，mode為操作別，errType為拋出值之型別(string、number、object等)或錯誤類別名稱，
+errCode僅在拋出值之自有資料屬性code為wsemi明列之機器代碼(libuv系統錯誤名稱、Node常見代碼、abstract-level與classic-level之LEVEL_xxx)時列出；
 不含資料值、主鍵、使用者識別、錯誤訊息、堆疊與路徑，亦不執行拋出值上之存取器。</li>
-<li>opt.logDetail為true時，還原為舊版輸出console.log(拋出值)(含錯誤訊息與堆疊，單一引數、無標籤)，供除錯；輸出的是拋出值之遮罩拷貝(見下述第5點)。</li>
+<li>opt.logDetail為true時，改輸出console.log(標籤, 細節)，細節為訂閱函數拋出值之遮罩拷貝(含錯誤訊息與堆疊)，供除錯。</li>
 <li>opt.funLog為函數時，診斷輸出只交給它而不寫console，呼叫為funLog(label, safe, detail)：label為上述標籤，safe為上述摘要，detail為訂閱函數拋出值之遮罩拷貝(含錯誤訊息，供使用端自行遮罩或轉送；拷貝不改動原物件，原地修改它不影響操作之回傳與事件參數)；
-與logDetail並給時以funLog為準。funLog拋錯、回傳之promise被reject皆被吞下，不影響操作。</li>
+與logDetail並給時以funLog為準。funLog拋錯被吞下，回傳之原生Promise被reject時標記為已處理(一般thenable之then不被呼叫)，皆不影響操作。</li>
 <li>opt.logDetail與opt.funLog於建構時取固定快照；型別錯誤(logDetail非布林true、funLog非函數)者忽略並用預設，不throw(同useCache、autoGenPk)；讀取該選項拋錯者亦同。</li>
 <li>資料庫位置(opt.url、opt.db、opt.cl組成之儲存位址，及其絕對路徑與正反斜線形式)視同連線字串：預設輸出不含細節，logDetail與funLog之細節中出現者(如後端I/O錯誤訊息經訂閱函數轉拋)以***取代，屬性值、屬性鍵與Symbol描述皆然；本套件無帳密選項。
-遮罩拷貝複製純物件、類別實例、陣列、Error與Date為內建原型之副本(不呼叫存取器與建構子)，函數、Proxy、二進位資料、Map與Set等以標記字串代替，深度超過8或節點超過5000者以[Truncated]代替。
+遮罩拷貝複製純物件、類別實例、陣列、Error、Map與Set等為內建原型之副本(不呼叫存取器與建構子)，函數、Proxy、二進位資料等以標記字串代替，過深或過大者以[Truncated]代替，細節見wsemi之maskDiagCopy。</li>
+<li>對外錯誤值不含憑證：整批reject之值、error事件之錯誤與訊息引數、逐筆結果之err欄位，凡為外來值(後端、使用端存取器或回呼拋出者)，含憑證(連線網址之帳密、password=或token=類鍵值對、Bearer權杖等)時以***取代，不含憑證者原物件交出(身分不變)，細節見wsemi之maskDiagErr；
+只遮憑證，不遮儲存路徑與單獨帳號(對外錯誤值之路徑屬回傳契約，如err.path)；本套件自身以固定詞彙組成之訊息(如can not insertBulk by existed id[...]、invalid data: ...)不經遮罩。
 註: 診斷輸出自身拋錯(如拋出值無法被格式化)被吞下，不使操作拋錯(格式化失敗時改輸出標籤與(unprintable))；各操作之resolve與reject內容、事件參數與發出時機不受任何診斷選項影響。
-註: 各操作reject、逐筆err欄位與error事件內之訊息文字(如can not insertBulk by existed id[...]、後端I/O錯誤原文)屬回傳契約，不在診斷輸出之範圍，訂閱函數自行轉拋時該文字會出現在其拋出值中(位址名稱於logDetail與funLog之細節遮罩)。</li>
+註: 各操作reject、逐筆err欄位與error事件內之固定詞彙訊息文字(如can not insertBulk by existed id[...])屬回傳契約，不在診斷輸出之範圍，訂閱函數自行轉拋時該文字會出現在其拋出值中(位址名稱於logDetail與funLog之細節遮罩)。</li>
 </ol></li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line91">line 91</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line95">line 95</a>
     </li></ul></dd>
     
 
@@ -501,7 +503,7 @@ errCode僅在拋出值之自有資料屬性code為機器代碼(ENOENT類之E開�
                 </td>
             
 
-            <td class="description last"><p>輸入診斷輸出是否還原為舊版含錯誤原文之完整細節，預設false(只輸出標籤與不含個資之摘要)，見上述診斷輸出</p></td>
+            <td class="description last"><p>輸入診斷輸出是否改為含錯誤原文之遮罩後細節，預設false(只輸出標籤與不含個資之摘要)，見上述診斷輸出</p></td>
         </tr>
 
     
@@ -637,7 +639,7 @@ errCode僅在拋出值之自有資料屬性code為機器代碼(ENOENT類之E開�
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1448">line 1448</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1483">line 1483</a>
     </li></ul></dd>
     
 
@@ -770,7 +772,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1342">line 1342</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1377">line 1377</a>
     </li></ul></dd>
     
 
@@ -948,7 +950,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1148">line 1148</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1183">line 1183</a>
     </li></ul></dd>
     
 
@@ -1114,7 +1116,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line814">line 814</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line849">line 849</a>
     </li></ul></dd>
     
 
@@ -1279,7 +1281,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line665">line 665</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line700">line 700</a>
     </li></ul></dd>
     
 
@@ -1568,7 +1570,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line932">line 932</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line967">line 967</a>
     </li></ul></dd>
     
 
@@ -1856,7 +1858,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line596">line 596</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line631">line 631</a>
     </li></ul></dd>
     
 
@@ -2016,7 +2018,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line524">line 524</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line559">line 559</a>
     </li></ul></dd>
     
 
@@ -2201,7 +2203,7 @@ select亦納入序列化，令其不致與寫入之批次替換交錯。</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line176">line 176</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line205">line 205</a>
     </li></ul></dd>
     
 
@@ -2285,7 +2287,7 @@ select亦納入序列化，令其不致與寫入之批次替換交錯。</p>
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Wed Oct 28 2026 10:23:07 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Thu Oct 29 2026 20:27:22 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>
