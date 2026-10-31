@@ -2,6 +2,9 @@
 
 > 只記現況,不寫過程(過程見 `../exp/experience.md`);規則細節見 `../rule/rulebook.md`.接續工作先讀本檔.
 
+- 語料 wire 案處置(2026-11-01,orm233): `api-diagwire` 之「wire案歸類全集」對 wsemi 1.9.36 語料 wire 案 23 個全數歸類(DETAIL 9、BRIEF 1、REJECT 2〔T07 與 DETAIL 重疊〕、NA 12);新增之 A11(`genDiagFunLog` 之 `opt.safeKeys`)、C14(`getDiagBriefErr` 之 `types`)、U22(`getDiagSecrets` 之 `conns`)皆判不適用: `src/WOrmLevel.mjs` 只引入 `getDiag`(:23)與 `getDiagSecrets`(:24),兩者不引入 `genDiagFunLog`;宣告為 `paths`(`getStoragePaths`)、`codes:['level']`、`safeKeys:['mode']`(:154-157),無 `types`、`conns`.
+- 最近一次全套驗證(2026-11-01,orm233,wsemi 1.9.36): `npm test`(`quiet-run --lock`)3921 passing / 210 pending / 0 failing.
+
 ## 功能現況
 
 | 功能 | 狀態 | 規則帳本 | 測試檔 |

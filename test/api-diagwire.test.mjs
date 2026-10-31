@@ -434,6 +434,9 @@ describe('api-diagwire', function() {
             O15: 'safe含白名單外之鍵: 本套件之safe只含mode, 無從注入白名單外之鍵; safeKeys宣告由unit-diaglog之站點盤點鎖定',
             A01: 'genDiagFunLog: 本套件不用伺服端轉接器',
             A07: 'genDiagFunLog: 本套件不用伺服端轉接器',
+            A11: 'genDiagFunLog之opt.safeKeys: 本套件src(WOrmLevel.mjs)只引入getDiag與getDiagSecrets, 兩者皆不引入genDiagFunLog, 轉接器由使用端自建; 本套件自身之safe白名單為getDiag之cfg.safeKeys(見O15)',
+            C14: 'getDiagBriefErr之types宣告(pg之DatabaseError形態): 本套件只宣告codes:[level], 不宣告types, 驅動錯誤之errType恆為Error',
+            U22: 'getDiagSecrets之conns(連線位址依內容分類): 本套件以paths宣告儲存位置(儲存路徑非連線字串), 不用conns',
         }
 
         it('wire案歸類全集: 適用(DETAIL、BRIEF、REJECT)與不適用(NA, 附理由)之聯集等於語料中wire:true之全部案例(語料新增wire案時須歸類)', function() {
