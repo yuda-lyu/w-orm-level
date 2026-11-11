@@ -1,14 +1,14 @@
 {
   "name": "w-orm-level",
-  "version": "1.0.52",
+  "version": "1.0.53",
   "main": "dist/w-orm-level.umd.js",
   "dependencies": {
     "level": "^10.0.0",
     "mingo": "^7.2.7",
-    "wsemi": "^1.9.55"
+    "wsemi": "^1.9.56"
   },
   "devDependencies": {
-    "w-package-tools": "^1.1.25"
+    "w-package-tools": "^1.1.26"
   },
   "scripts": {
     "test": "mocha --parallel \"test/*.test.mjs\" --timeout 180000",
