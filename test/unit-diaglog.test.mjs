@@ -83,8 +83,9 @@ describe('diaglog: 單一出口掃描(規則①, D1單一實作)', function() {
     let reOut = [/\bconsole\b/, /\bstdout\b/, /\bstderr\b/, /\bemitWarning\b/, /\brequire\b/, /\bimport\s*\(/]
     let reEnv = [/\bprocess\b/, /\bglobalThis\b/, /\bglobal\b/]
 
-    it('src只有WOrmLevel.mjs與getStoragePaths.mjs: 無自寫之getDiag.mjs(遮罩、摘要與出口一律用wsemi之共用實作)', function() {
-        assert.deepStrictEqual(files.sort(), ['WOrmLevel.mjs', 'getStoragePaths.mjs'])
+    //probeReadable.mjs為呼叫端給的值之可讀性探針(帳本R-PROBE-01), 非診斷實作; 其與其餘src檔同受下方「不得出現console、process等」之掃描涵蓋
+    it('src只有WOrmLevel.mjs、getStoragePaths.mjs與probeReadable.mjs(可讀性探針, 帳本R-PROBE-01): 無自寫之getDiag.mjs(遮罩、摘要與出口一律用wsemi之共用實作)', function() {
+        assert.deepStrictEqual(files.sort(), ['WOrmLevel.mjs', 'getStoragePaths.mjs', 'probeReadable.mjs'])
     })
 
     it('WOrmLevel.mjs之診斷出口來自wsemi/src/getDiag.mjs與getDiagSecrets.mjs, 不另寫等價實作', function() {

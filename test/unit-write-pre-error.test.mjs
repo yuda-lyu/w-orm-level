@@ -3,6 +3,7 @@ import w from 'wsemi'
 import { Level } from 'level'
 import WOrm from '../src/WOrmLevel.mjs'
 import { mkObserver } from './lib/mkObserver.mjs'
+import { arr1Getter, proxyOwnKeysThrows, proxyTagThrows, proxyRevoked, proxyGopdThrows, proxyProtoThrows, protoChainOwnKeysThrows, arrLenThrows, arrRevoked } from './lib/hostile.mjs'
 
 
 //寫入入口之前置處理與錯誤路徑(帳本R-WRITE-ERR-01, 排程第80項; 來源為第77項外審Argon F-03(a))
@@ -44,33 +45,9 @@ describe('write-pre-error', function() {
             },
         }
     }
-    let arr1Getter = () => {
-        let a = [0]
-        Object.defineProperty(a, '0', {
-            get() {
-                throw new Error('elem-getter-boom')
-            },
-            enumerable: true,
-        })
-        return a
-    }
-    let proxyOwnKeysThrows = () => {
-        return new Proxy({ id: 'z1' }, {
-            ownKeys() {
-                throw new Error('ownKeys-boom')
-            },
-        })
-    }
-    let proxyTagThrows = () => {
-        return new Proxy({ id: 'z1' }, {
-            get(t, k) {
-                if (k === Symbol.toStringTag) {
-                    throw new Error('tag-boom')
-                }
-                return t[k]
-            },
-        })
-    }
+
+    //敵意值(arr1Getter、proxyOwnKeysThrows、proxyTagThrows、proxyRevoked、proxyGopdThrows、proxyProtoThrows、protoChainOwnKeysThrows、arrLenThrows、arrRevoked)取自test/lib/hostile.mjs(帳本R-PROBE-01):
+    //wsemi 1.9.69起判斷函數對讀取即拋錯之值回false而不拋錯, 這些「不可讀」之data仍須走同一錯誤路徑, 不可被當成輸入無效而早退
 
     //optGetterThrows, option之key欄位讀取時拋錯
     let optGetterThrows = (key) => {
@@ -95,6 +72,12 @@ describe('write-pre-error', function() {
         { key: 'Proxy whose ownKeys throws (iseobj)', mk: proxyOwnKeysThrows },
         { key: 'Proxy whose toStringTag read throws (iseobj)', mk: proxyTagThrows },
         { key: 'one-element array whose [0] getter throws (isearr)', mk: arr1Getter },
+        { key: 'revoked Proxy (iseobj)', mk: proxyRevoked },
+        { key: 'Proxy whose getOwnPropertyDescriptor throws (iseobj)', mk: proxyGopdThrows },
+        { key: 'Proxy whose getPrototypeOf throws (iseobj)', mk: proxyProtoThrows },
+        { key: 'array Proxy whose length read throws (isearr)', mk: arrLenThrows },
+        { key: 'revoked array Proxy (isarr)', mk: arrRevoked },
+        { key: 'object whose prototype is a Proxy whose ownKeys throws (iseobj for...in)', mk: protoChainOwnKeysThrows },
     ]
 
     //inputMsgs, 各壞輸入應原樣通過之訊息(帳本規則2: 訊息為拋出者之原訊息, 不被改寫為泛用訊息; 引擎/lodash之訊息以關鍵字比對, 不綁死版本)
@@ -108,6 +91,12 @@ describe('write-pre-error', function() {
         'Proxy whose ownKeys throws (iseobj)': 'ownKeys-boom',
         'Proxy whose toStringTag read throws (iseobj)': 'tag-boom',
         'one-element array whose [0] getter throws (isearr)': 'elem-getter-boom',
+        'revoked Proxy (iseobj)': /revoked/i,
+        'Proxy whose getOwnPropertyDescriptor throws (iseobj)': 'gopd-boom',
+        'Proxy whose getPrototypeOf throws (iseobj)': 'proto-boom',
+        'array Proxy whose length read throws (isearr)': 'len-boom',
+        'revoked array Proxy (isarr)': /revoked/i,
+        'object whose prototype is a Proxy whose ownKeys throws (iseobj for...in)': 'ownKeys-boom',
     }
 
     //thrownValues, 呼叫端存取器拋出之值之型別(帳本規則1: 含拋出值本身無法轉為字串者, error事件仍恰一次): reject之值為拋出者本身, 事件之訊息為字串(msg)

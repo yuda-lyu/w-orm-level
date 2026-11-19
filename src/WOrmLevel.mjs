@@ -23,6 +23,7 @@ import chkOrmData from 'wsemi/src/chkOrmData.mjs'
 import getDiag from 'wsemi/src/getDiag.mjs'
 import getDiagSecrets from 'wsemi/src/getDiagSecrets.mjs'
 import getStoragePaths from './getStoragePaths.mjs'
+import { probeTag, probeReadable } from './probeReadable.mjs'
 
 
 /**
@@ -106,9 +107,13 @@ function WOrmLevel(opt = {}) {
         }
     }
 
+    //建構層之opt各值皆為呼叫端給的值: wsemi 1.9.69起判斷函數對讀取即拋錯之值不拋錯而回false, 故判斷為假時先經probeTag分辨(帳本R-PROBE-01),
+    //不可讀者(已撤銷之Proxy、Symbol.toStringTag拋錯者)同修前於建構時同步throw原錯誤; 可讀而型別不符者仍採忽略(本套件慣例)
+
     //url
     let url = get(opt, 'url')
     if (!isestr(url)) {
+        probeTag(url)
         url = './_db'
     }
     else {
@@ -118,6 +123,7 @@ function WOrmLevel(opt = {}) {
     //db
     let db = get(opt, 'db')
     if (!isestr(db)) {
+        probeTag(db)
         db = 'worm'
     }
     else {
@@ -127,6 +133,7 @@ function WOrmLevel(opt = {}) {
     //cl
     let cl = get(opt, 'cl')
     if (!isestr(cl)) {
+        probeTag(cl)
         cl = 'test'
     }
     else {
@@ -136,6 +143,7 @@ function WOrmLevel(opt = {}) {
     //useCache
     let useCache = get(opt, 'useCache')
     if (!isbol(useCache)) {
+        probeTag(useCache)
         useCache = false
     }
 
@@ -143,6 +151,7 @@ function WOrmLevel(opt = {}) {
     //否則同一資料表將混入兩種來源之主鍵而難以追溯
     let autoGenPk = get(opt, 'autoGenPk')
     if (!isbol(autoGenPk)) {
+        probeTag(autoGenPk)
         autoGenPk = true
     }
 
@@ -446,17 +455,23 @@ function WOrmLevel(opt = {}) {
     //procPk,依autoGenPk處理各數據之主鍵, 供insert、insertBulk與save共用
     //autoGenPk為true時補值; 為false時不補值, 未帶有效主鍵者屬呼叫端未履行契約, 拋出為整批性錯誤,
     //且檢查於任何寫入之前完成, 故不會有部份筆數已寫入而整批失敗之情形
+    //id雖取自cloneDeep之複本, 複本保留原型, 類別實例原型上之存取器id仍會執行呼叫端之程式並可回傳不可讀之值:
+    //判斷為假時先經probeTag分辨(帳本R-PROBE-01), 不可讀者拋原錯誤, 不被當成未帶id而補值或改報固定詞彙
     let procPk = (data, fnName) => {
         if (autoGenPk) {
             return map(data, function(v) {
-                if (!isestr(get(v, 'id'))) {
+                let id = get(v, 'id')
+                if (!isestr(id)) {
+                    probeTag(id)
                     v.id = genIDSeq()
                 }
                 return v
             })
         }
         each(data, function(v, k) {
-            if (!isestr(get(v, 'id'))) {
+            let id = get(v, 'id')
+            if (!isestr(id)) {
+                probeTag(id)
                 throw mkOwnErr(`can not ${fnName} by data[${k}] without valid id when autoGenPk is false`)
             }
         })
@@ -635,8 +650,15 @@ function WOrmLevel(opt = {}) {
         let res = null
         try {
 
+            //check, pk非字串者: 呼叫端給的pk不可讀(已撤銷之Proxy、Symbol.toStringTag拋錯者)走錯誤路徑(error事件恰一次後reject, 帳本R-PROBE-01),
+            //wsemi 1.9.69起isestr對其回false, 若不探針則與「型別不符」同為查無數據; 可讀而型別不符者視為查無數據
+            if (!isestr(pk)) {
+                probeTag(pk)
+                return null
+            }
+
             //check, 含NUL或孤立代理字元之主鍵亦屬無效(chkPk): 孤立代理字元經UTF-8編碼後被改寫為U+FFFD而會命中他筆, 此類主鍵不可能由本套件寫入(寫入側已拒收), 回null而不reject, 不發出error事件
-            if (!isestr(pk) || chkPk(pk) !== null) {
+            if (chkPk(pk) !== null) {
                 //未給有效主鍵值視為查無數據
                 return null
             }
@@ -707,11 +729,17 @@ function WOrmLevel(opt = {}) {
             //returnList, 讀取呼叫端傳入之option、判定data與cloneDeep皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01)
             let returnList = get(option, 'returnList')
             if (!isbol(returnList)) {
+                probeTag(returnList) //不可讀者走錯誤路徑(帳本R-PROBE-01; wsemi 1.9.69起isbol對其回false)
                 returnList = false
             }
 
             //check, 輸入無效者直接回傳, 不經catch之後之收尾且不發事件
             if (!iseobj(data) && !isearr(data)) {
+
+                //probe, 判定為假時分辨「不可讀」與「輸入無效」: 呼叫端給的data不可讀者(已撤銷之Proxy、ownKeys等陷阱拋錯、元素存取器拋錯)走錯誤路徑(帳本R-PROBE-01;
+                //wsemi 1.9.69起iseobj、isearr對其回false); 判定為真者不探針(不增加讀取), 其後之cloneDeep逐一讀取, 拋錯者同走錯誤路徑
+                probeReadable(data)
+
                 if (returnList) {
                     //輸入無效, 對齊save與del之空陣列規定
                     return []
@@ -855,6 +883,10 @@ function WOrmLevel(opt = {}) {
 
             //check, 判定data與cloneDeep皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01); 輸入無效者直接回傳, 不經catch之後之收尾且不發事件
             if (!iseobj(data) && !isearr(data)) {
+
+                //probe, 判定為假時分辨「不可讀」與「輸入無效」(帳本R-PROBE-01; wsemi 1.9.69起iseobj、isearr對不可讀之值回false): 不可讀者拋原錯誤走錯誤路徑; 判定為真者不探針
+                probeReadable(data)
+
                 return {
                     n: 0,
                     nInserted: 0,
@@ -973,6 +1005,10 @@ function WOrmLevel(opt = {}) {
 
             //check, 判定data、cloneDeep與讀取呼叫端傳入之option皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01); 輸入無效者直接回傳, 不經catch之後之收尾且不發事件
             if (!iseobj(data) && !isearr(data)) {
+
+                //probe, 判定為假時分辨「不可讀」與「輸入無效」(帳本R-PROBE-01; wsemi 1.9.69起iseobj、isearr對不可讀之值回false): 不可讀者拋原錯誤走錯誤路徑; 判定為真者不探針
+                probeReadable(data)
+
                 return []
             }
 
@@ -1189,6 +1225,10 @@ function WOrmLevel(opt = {}) {
 
             //check, 判定data與cloneDeep皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01); 輸入無效者直接回傳, 不經catch之後之收尾且不發事件
             if (!iseobj(data) && !isearr(data)) {
+
+                //probe, 判定為假時分辨「不可讀」與「輸入無效」(帳本R-PROBE-01; wsemi 1.9.69起iseobj、isearr對不可讀之值回false): 不可讀者拋原錯誤走錯誤路徑; 判定為真者不探針
+                probeReadable(data)
+
                 return []
             }
 
