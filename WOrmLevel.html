@@ -114,8 +114,13 @@ U+FFFD本身與成對代理(emoji等)為良構，照常接受。既有資料不�
 給了而非字串(數字、布林、物件、陣列、String包裝物件、Symbol、BigInt等)者不補值亦不替換為新產生之主鍵(主鍵為資料之身分，給了錯值卻換成新主鍵寫入，事後無從對應)，
 依各入口既有之失敗通道拒絕，通道不隨autoGenPk改變，訊息為固定詞彙invalid id: not a string at <a href="%E4%B8%8D%E5%9B%9E%E9%A1%AF%E5%80%BC">data[k].id</a>：
 insert與insertBulk整批reject(error事件於reject之前恰一次、不發change、資料庫不變)，save與del該筆ok為0並附err，selectByPk回null。</p>
+<p>主鍵只認自有可列舉之資料屬性(w-orm系列規則，帳本R-PKOWN-01)：列之id為繼承(原型鏈上，如Object.create({ id })或類別實例原型上之getter與資料屬性，不論值為字串、數字或物件)
+或自有不可列舉者，視為未帶(同undefined、null、空字串)：autoGenPk為true時補新主鍵(以Object.defineProperty定義為自有可列舉之資料屬性，不經賦值，原型上之setter不被執行、凍結之原型不致拋錯)，
+為false時依上述未帶之整批reject；del視為未給主鍵(該筆ok為0，訊息invalid id: not a string at [data[k].id])。繼承值不被當成主鍵，故不再有「以繼承值為鍵寫入無id欄之列」，
+亦不再有與庫內同值之既有列衝突(insert跳過、insertBulk整批reject、save覆寫、del刪除)。先以既有路徑取值，值為未帶者短路，只有值為給了才查描述子(不呼叫getter、不多讀有效輸入)；
+繼承之存取器id仍照既有路徑讀1次(拋錯者為固定詞彙invalid data: must be a readable value)，其回傳之值不被使用(含不可讀之值)。selectByPk收純量pk，不適用；非主鍵欄之繼承欄位之處置不變。</p>
 <p>呼叫端給的值之可讀性(w-orm系列規則，帳本R-PROBE-01，用wsemi之chkReadable)：呼叫端給的資料(data)、選項(opt.url、opt.db、opt.cl、opt.useCache、opt.autoGenPk、option.returnList)、
-selectByPk之pk與經類別實例原型上之存取器讀出之id，若為讀取即拋錯之值(已撤銷之Proxy、Symbol.toStringTag或陷阱拋錯者、單元素陣列之[0]存取器拋錯者等)，
+selectByPk之pk與經類別實例原型上之存取器讀出之id(存取器自身拋錯者；其回傳之值屬繼承，視為未帶而不被探測，見上)，若為讀取即拋錯之值(已撤銷之Proxy、Symbol.toStringTag或陷阱拋錯者、單元素陣列之[0]存取器拋錯者等)，
 走各入口既有之失敗通道(寫入入口與selectByPk為error事件恰一次後reject、資料庫不變，建構為同步throw)，訊息為固定詞彙invalid &lt;名稱&gt;: must be a readable value，
 不含拋出者之原訊息與值，亦不轉出呼叫端物件(存取器、Proxy陷阱、巢狀值)拋出之文字；可讀而型別不符者行為不變(輸入無效早退、查無數據、選項採忽略)。名稱依拒絕之處：</p>
 <ol>
@@ -150,7 +155,7 @@ errCode僅在拋出值之自有資料屬性code為wsemi明列之機器代碼(lib
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line116">line 116</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line122">line 122</a>
     </li></ul></dd>
     
 
@@ -482,7 +487,7 @@ errCode僅在拋出值之自有資料屬性code為wsemi明列之機器代碼(lib
                 </td>
             
 
-            <td class="description last"><p>輸入insert、insertBulk與save於數據未帶有效主鍵(本套件為id欄位)時是否自動產生主鍵值，預設true；給false代表主鍵改由呼叫端自備，套件不產生亦不檢查其唯一性，未帶主鍵(id為undefined、null、空字串或鍵不存在)者將reject；給了而非字串者不論此選項皆拒絕(見上述主鍵之未帶與給了)</p></td>
+            <td class="description last"><p>輸入insert、insertBulk與save於數據未帶有效主鍵(本套件為id欄位)時是否自動產生主鍵值，預設true；給false代表主鍵改由呼叫端自備，套件不產生亦不檢查其唯一性，未帶主鍵(id為undefined、null、空字串、鍵不存在，或id為繼承而非自有可列舉之屬性)者將reject；給了而非字串者不論此選項皆拒絕(見上述主鍵之未帶與給了、主鍵只認自有可列舉之資料屬性)</p></td>
         </tr>
 
     
@@ -658,7 +663,7 @@ errCode僅在拋出值之自有資料屬性code為wsemi明列之機器代碼(lib
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1677">line 1677</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1722">line 1722</a>
     </li></ul></dd>
     
 
@@ -791,7 +796,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1571">line 1571</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1616">line 1616</a>
     </li></ul></dd>
     
 
@@ -969,7 +974,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1366">line 1366</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1397">line 1397</a>
     </li></ul></dd>
     
 
@@ -1061,7 +1066,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
 
             
 
-            <td class="description last"><p>輸入數據物件或陣列</p></td>
+            <td class="description last"><p>輸入數據物件或陣列；各筆主鍵id須為自有可列舉之字串，繼承(原型鏈上)或自有不可列舉者視為未給，該筆ok為0並附err(訊息invalid id: not a string at [data[k].id])且不刪除同值之既有列，詳見類別說明</p></td>
         </tr>
 
     
@@ -1135,7 +1140,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1014">line 1014</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1045">line 1045</a>
     </li></ul></dd>
     
 
@@ -1227,7 +1232,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
 
             
 
-            <td class="description last"><p>輸入數據物件或陣列；各筆主鍵id未帶者依autoGenPk補值或整批reject，給了而非字串者整批reject(訊息invalid id: not a string at [data[k].id])，詳見類別說明</p></td>
+            <td class="description last"><p>輸入數據物件或陣列；各筆主鍵id未帶(含繼承而非自有可列舉者)依autoGenPk補值或整批reject，給了而非字串者整批reject(訊息invalid id: not a string at [data[k].id])，詳見類別說明</p></td>
         </tr>
 
     
@@ -1300,7 +1305,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line849">line 849</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line880">line 880</a>
     </li></ul></dd>
     
 
@@ -1408,7 +1413,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
                 </td>
             
 
-            <td class="description last"><p>輸入數據物件或陣列；各筆主鍵id未帶者依autoGenPk補值或整批reject，給了而非字串者整批reject(訊息invalid id: not a string at [data[k].id])，詳見類別說明</p></td>
+            <td class="description last"><p>輸入數據物件或陣列；各筆主鍵id未帶(含繼承而非自有可列舉者)依autoGenPk補值或整批reject，給了而非字串者整批reject(訊息invalid id: not a string at [data[k].id])，詳見類別說明</p></td>
         </tr>
 
     
@@ -1589,7 +1594,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1141">line 1141</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1172">line 1172</a>
     </li></ul></dd>
     
 
@@ -1697,7 +1702,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
                 </td>
             
 
-            <td class="description last"><p>輸入數據物件或陣列；各筆主鍵id未帶者依autoGenPk補值或整批reject，給了而非字串者該筆ok為0並附err(訊息invalid id: not a string at [data[k].id])，詳見類別說明</p></td>
+            <td class="description last"><p>輸入數據物件或陣列；各筆主鍵id未帶(含繼承而非自有可列舉者)依autoGenPk補值或整批reject，給了而非字串者該筆ok為0並附err(訊息invalid id: not a string at [data[k].id])，詳見類別說明</p></td>
         </tr>
 
     
@@ -1877,7 +1882,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line771">line 771</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line802">line 802</a>
     </li></ul></dd>
     
 
@@ -2037,7 +2042,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line699">line 699</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line730">line 730</a>
     </li></ul></dd>
     
 
@@ -2222,7 +2227,7 @@ select亦納入序列化，令其不致與寫入之批次替換交錯。</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line303">line 303</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line309">line 309</a>
     </li></ul></dd>
     
 
@@ -2306,7 +2311,7 @@ select亦納入序列化，令其不致與寫入之批次替換交錯。</p>
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Fri Nov 20 2026 08:44:12 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Fri Nov 20 2026 15:08:31 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>
