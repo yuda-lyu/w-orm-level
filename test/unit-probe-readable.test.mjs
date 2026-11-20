@@ -446,8 +446,10 @@ describe('probe-readable', function() {
         }
     })
 
-    //id經原型存取器讀出(規則5): cloneDeep保留原型, 類別實例原型上之id存取器於複本上仍執行呼叫端之程式, 其回傳標籤不可讀之值者走錯誤路徑(固定詞彙invalid data: must be a readable value, error事件之data為null), 不被當成未帶id而補值;
-    //其回傳可讀而非字串者依主鍵規則(R-PKGIVEN-01)拒絕, 見unit-pk-given
+    //id經原型存取器讀出(規則5): cloneDeep保留原型, 類別實例原型上之id存取器於複本上仍執行呼叫端之程式(照既有路徑取值1次, 拋錯者走錯誤路徑, 固定詞彙invalid data: must be a readable value, 見unit-align-readable A2);
+    //2026-11-20(第569項olv569, 帳本R-PKOWN-01)起: 該id屬繼承而非自有可列舉, 視為「未帶」, 其回傳之值(不論標籤是否可讀)不被探測、不被使用——
+    //autoGenPk為true補新主鍵(複本之id為自有資料屬性, 不經賦值), 為false依「未帶」整批reject(訊息can not <入口> by data[0] without valid id when autoGenPk is false);
+    //修前此處為「標籤不可讀者拒絕為invalid data」, 與「可讀而非字串者拒絕為not a string」(見unit-pk-given): 兩者皆因把繼承值當主鍵而生
     describe('id read through a prototype accessor (procPk site)', function() {
         let mkInst = (mkId) => {
             class P {
@@ -464,33 +466,53 @@ describe('probe-readable', function() {
         for (let apk of [true, false]) {
             for (let fn of ['insert', 'insertBulk', 'save']) {
                 for (let h of hostiles) {
-                    it(`${fn} (autoGenPk ${apk}): prototype getter id returns ${h.key}: rejects the whole batch with the fixed message, one error event before reject, no change, database unchanged [rules 1, 2, 5]`, async function() {
-                        let wo = mk(`pid-${fn}-${apk}-${h.key.replace(/\W+/g, '_')}`, { autoGenPk: apk })
-                        let ob = mkObserver(wo)
-                        await wo.insertBulk(seed())
-                        let snapBefore = await snap(wo)
-                        let out = await ob.run(() => wo[fn](mkInst(h.mk)))
-                        assert.strict.equal(out.ok, false, `${fn} should reject`)
-                        chkRd(out.err, 'data', h)
-                        let evErr = out.evs.filter((v) => v.t === 'error')
-                        assert.strict.equal(evErr.length, 1, `${fn} should emit error exactly once`)
-                        assert.strict.equal(out.nAtSettle, 1, `${fn} should emit error before reject`)
-                        assert.strict.equal(evErr[0].settledAtEmit, false)
-                        assert.strict.equal(evErr[0].mode, fn)
-                        assert.strict.equal(evErr[0].err, out.err.message)
-                        assert.strict.equal(out.evs.filter((v) => v.t === 'change').length, 0)
-                        assert.deepStrictEqual(await snap(wo), snapBefore)
-                    })
+                    if (apk) {
+                        it(`${fn} (autoGenPk true): prototype getter id returns ${h.key}: an inherited id is not given, its value is neither probed nor used, a generated id is stored, no error event [rules 1, 2, 5; R-PKOWN-01]`, async function() {
+                            let wo = mk(`pid-${fn}-${apk}-${h.key.replace(/\W+/g, '_')}`, { autoGenPk: apk })
+                            let ob = mkObserver(wo)
+                            await wo.insertBulk(seed())
+                            let snapBefore = await snap(wo)
+                            let out = await ob.run(() => wo[fn](mkInst(h.mk)))
+                            assert.strict.equal(out.ok, true, `${fn} should resolve, got ${out.err && out.err.message}`)
+                            assert.strict.equal(out.evs.filter((v) => v.t === 'error').length, 0)
+                            assert.strict.equal(out.evs.filter((v) => v.t === 'change' && v.mode === fn).length, 1)
+                            let after = await snap(wo)
+                            assert.strict.equal(after.length, snapBefore.length + 1)
+                            let added = after.filter((v) => !snapBefore.some((x) => x.id === v.id))
+                            assert.strict.equal(added.length, 1)
+                            assert.strict.ok(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(added[0].id), `generated id expected, got ${String(added[0].id)}`)
+                        })
+                    }
+                    else {
+                        it(`${fn} (autoGenPk false): prototype getter id returns ${h.key}: an inherited id is not given, rejected as not given (whole batch), one error event before reject, no change, database unchanged [rules 1, 2, 5; R-PKOWN-01]`, async function() {
+                            let wo = mk(`pid-${fn}-${apk}-${h.key.replace(/\W+/g, '_')}`, { autoGenPk: apk })
+                            let ob = mkObserver(wo)
+                            await wo.insertBulk(seed())
+                            let snapBefore = await snap(wo)
+                            let out = await ob.run(() => wo[fn](mkInst(h.mk)))
+                            assert.strict.equal(out.ok, false, `${fn} should reject`)
+                            assert.strict.equal(out.err.message, `can not ${fn} by data[0] without valid id when autoGenPk is false`)
+                            assert.strict.ok(!h.msg.test(out.err.message), 'the hostile value must not be echoed')
+                            let evErr = out.evs.filter((v) => v.t === 'error')
+                            assert.strict.equal(evErr.length, 1, `${fn} should emit error exactly once`)
+                            assert.strict.equal(out.nAtSettle, 1, `${fn} should emit error before reject`)
+                            assert.strict.equal(evErr[0].settledAtEmit, false)
+                            assert.strict.equal(evErr[0].mode, fn)
+                            assert.strict.equal(evErr[0].err, out.err.message)
+                            assert.strict.equal(out.evs.filter((v) => v.t === 'change').length, 0)
+                            assert.deepStrictEqual(await snap(wo), snapBefore)
+                        })
+                    }
                 }
             }
         }
-        it('control: a prototype getter id returning a readable non-string is not unreadable: it is rejected as not a string, not replaced (see unit-pk-given)', async function() {
+        it('control: a prototype getter id returning a readable non-string is an inherited id too: not given, a generated id is stored (see unit-pk-own)', async function() {
             let wo = mk('pid-control')
             let ob = mkObserver(wo)
             let out = await ob.run(() => wo.insert(mkInst(() => 123)))
-            assert.strict.equal(out.ok, false)
-            assert.strict.equal(out.err.message, 'invalid id: not a string at [data[0].id]')
-            assert.strict.equal(out.evs.filter((v) => v.t === 'error').length, 1)
+            assert.strict.equal(out.ok, true)
+            assert.deepStrictEqual(out.val, { n: 1, nInserted: 1, ok: 1 })
+            assert.strict.equal(out.evs.filter((v) => v.t === 'error').length, 0)
         })
     })
 })

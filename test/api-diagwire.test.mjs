@@ -221,16 +221,19 @@ describe('api-diagwire', function() {
 
     describe('逐筆結果之err欄位(save、del): 外來值之訊息於建立時即遮, change事件、error事件與回傳值同源', function() {
 
-        //mkCounted, 類別實例之id為原型上之可列舉存取器, 讀取第limit次(含)起拋出含憑證之錯誤:
-        //cloneDeep只讀自有鍵, 故前幾次讀取發生在整批檢核階段(落入整批reject), 之後落入逐筆處理(落入逐筆err); 每個limit各試, 不依賴內部讀取次數
+        //mkCounted, 類別實例之id為原型上之可列舉存取器, 讀取第limit次(含)起拋出含憑證之錯誤; st.reads為累計讀取次數:
+        //2026-11-20(第569項olv569, 帳本R-PKOWN-01)起, 原型上之id屬繼承而非自有可列舉, 視為未帶:
+        //save之procPk照既有路徑取值1次後以自有資料屬性補主鍵, 其後之讀取站(良構檢核、kp、合併)讀的是自有屬性而不再經存取器(故不再有「複本之後之讀取站拋出外來值」之刺激:
+        //原落入逐筆err之遮罩通道(outMsg)已無使用端可達之刺激, 該站僅餘原始碼鎖定(unit-diaglog之err: outMsg(err)計數), 見帳本R-PKOWN-01之已知限制);
+        //del整批取鍵與逐筆各經guardRead讀1次(共2次), 值為有效字串而繼承者該筆ok為0(invalid id: not a string)
         let mkCounted = (limit) => {
             class D {}
-            let reads = 0
+            let st = { reads: 0 }
             Object.defineProperty(D.prototype, 'id', {
                 enumerable: true,
                 get() {
-                    reads++
-                    if (reads >= limit) {
+                    st.reads++
+                    if (st.reads >= limit) {
                         throw mkCredErr()
                     }
                     return 'k1'
@@ -238,43 +241,59 @@ describe('api-diagwire', function() {
             })
             let o = new D()
             o.name = 'x'
-            return o
+            return { o, st }
         }
 
-        //2026-11-20(第557項對齊輪A2): 複本之後之讀取站(補主鍵、良構檢核、合併、del之id讀取)已經guardRead轉固定詞彙(RD), 其後之讀取(getKpValues、kp.has等)仍為外來值經遮罩(MASKED, 帳本R-ALIGN-01已知邊界①),
-        //故各limit之結果為RD或MASKED二者之一, 憑證恆不外洩; 各通道(整批/逐筆 × 固定詞彙/遮罩)至少有案例(非空轉)
+        //2026-11-20(第557項對齊輪A2): 複本之後之讀取站(補主鍵、del之id讀取)經guardRead轉固定詞彙(RD), 憑證恆不外洩
         const RD = 'invalid data: must be a readable value'
+        const NOT_STR = 'invalid id: not a string at [data[0].id]'
         for (let op of ['save', 'del']) {
-            it(`${op}: 逐筆處理中拋出含憑證之外來錯誤: 結果恆為固定詞彙或已遮罩, 憑證不外洩; 該筆ok為0與整批reject之通道皆有案例(非空轉)`, async function() {
+            it(`${op}: 繼承之存取器id於第limit次讀取起拋出含憑證之外來錯誤: 結果恆為固定詞彙, 憑證不外洩; 讀取次數與通道依規則(save讀1次、del讀2次; 整批reject與該筆ok為0兩通道皆有案例)`, async function() {
                 let { wo } = mkWo()
                 let errEvs = []
                 let chgRes = []
                 wo.on('error', (mode, data, msg) => errEvs.push([mode, msg]))
                 wo.on('change', (mode, data, res) => chgRes.push(JSON.stringify(res)))
-                let cnt = { itemRd: 0, itemMasked: 0, batchRd: 0, batchMasked: 0 }
-                for (let limit = 2; limit <= 16; limit++) {
-                    let r = await catchOf(wo[op]([mkCounted(limit)]))
-                    if (!(r instanceof Error) && r.resolved[0].ok === 0) {
-                        let s = r.resolved[0].err
-                        assert.ok(s === RD || s === MASKED, `limit ${limit}: ${s}`)
-                        cnt[s === RD ? 'itemRd' : 'itemMasked']++
+                let cnt = { itemRd: 0, itemNotStr: 0, batchRd: 0, saved: 0 }
+                let nRead = op === 'save' ? 1 : 2
+                for (let limit = 1; limit <= 6; limit++) {
+                    let { o, st } = mkCounted(limit)
+                    let r = await catchOf(wo[op]([o]))
+                    assert.ok(!JSON.stringify(r instanceof Error ? r.message : r.resolved).includes(CRED), `limit ${limit}: credential leaked`)
+                    if (r instanceof Error) {
+
+                        //整批性: 第1次讀取(save之procPk; del之整批取鍵)即拋出
+                        assert.strictEqual(r.message, RD, `limit ${limit}`)
+                        assert.strictEqual(limit, 1)
+                        assert.strictEqual(st.reads, 1)
+                        cnt.batchRd++
                     }
-                    else if (r instanceof Error) {
-                        assert.ok(r.message === RD || r.message === MASKED, `limit ${limit}: ${r.message}`)
-                        cnt[r.message === RD ? 'batchRd' : 'batchMasked']++
+                    else if (op === 'save') {
+
+                        //save: 讀1次(procPk)後id為自有屬性, 補主鍵新增一筆
+                        assert.deepStrictEqual(r.resolved, [{ n: 1, nInserted: 1, nModified: 0, ok: 1 }], `limit ${limit}`)
+                        assert.strictEqual(st.reads, nRead)
+                        cnt.saved++
+                    }
+                    else {
+
+                        //del: 第2次讀取(逐筆)拋出為該筆之固定詞彙; 之後兩次皆讀得有效字串而繼承, 該筆ok為0(not a string)
+                        assert.strictEqual(r.resolved[0].ok, 0)
+                        assert.strictEqual(st.reads, nRead)
+                        assert.strictEqual(r.resolved[0].err, limit === 2 ? RD : NOT_STR, `limit ${limit}`)
+                        cnt[limit === 2 ? 'itemRd' : 'itemNotStr']++
                     }
                 }
-                assert.ok(cnt.itemRd + cnt.itemMasked >= 1, '須有情形落入逐筆處理')
                 if (op === 'save') {
-                    assert.ok(cnt.itemMasked >= 1, '逐筆err之外來值遮罩(outMsg)非空轉')
-                    assert.ok(cnt.batchRd >= 1, '整批性之固定詞彙(guardRead)非空轉')
+                    assert.ok(cnt.batchRd >= 1 && cnt.saved >= 1, '整批性之固定詞彙(procPk讀取)與讀1次後補主鍵兩通道皆非空轉')
+                    assert.strictEqual(errEvs.length, cnt.batchRd)
                 }
                 else {
-                    assert.ok(cnt.itemRd >= 1, 'del之id讀取拋錯為該筆之固定詞彙(guardRead)非空轉')
+                    assert.ok(cnt.batchRd >= 1 && cnt.itemRd >= 1 && cnt.itemNotStr >= 1, 'del之整批性、該筆固定詞彙(guardRead)、該筆not a string三通道皆非空轉')
+                    assert.strictEqual(errEvs.length, cnt.batchRd + cnt.itemRd + cnt.itemNotStr)
                 }
-                assert.ok(errEvs.length >= cnt.itemRd + cnt.itemMasked + cnt.batchRd + cnt.batchMasked)
                 for (let [, msg] of errEvs) {
-                    assert.ok(msg === RD || msg === MASKED, msg)
+                    assert.ok(msg === RD || msg === NOT_STR, msg)
                 }
                 assert.ok(!chgRes.join('').includes(CRED))
                 await wo.close()

@@ -52,7 +52,7 @@ Date：本套件以 JSON 存值，Date 存入後為 ISO 字串(`toISOString()`)�
 
 ### 主鍵之未帶與給了 (Primary key given or not)
 
-w-orm 系列共同規則：主鍵 `id` 只有三種情形視為**未帶**：`undefined`、`null`、空字串(含鍵不存在)。其餘一律視為**給了**。
+w-orm 系列共同規則：主鍵 `id` 只有三種**值**視為**未帶**：`undefined`、`null`、空字串(含鍵不存在)；另外 `id` 非「自有可列舉之資料屬性」(繼承或自有不可列舉)者亦視為未帶(見下方「主鍵只認自有可列舉之資料屬性」)。其餘一律視為**給了**。
 
 - **未帶**：`autoGenPk` 為 `true`(預設)時自動產生主鍵；為 `false` 時整批 reject(`insert`、`insertBulk`、`save` 皆然，`save` 不降為逐筆)，訊息 `can not <入口> by data[<k>] without valid id when autoGenPk is false`。
 - **給了而非字串**(數字、布林、物件、陣列、`String` 包裝物件、`Symbol`、`BigInt` 等)：一律拒絕，**不補值、不替換為新產生之主鍵**(主鍵為資料之身分，給了錯值卻換成新主鍵寫入，事後無從對應)，訊息為固定詞彙 `invalid id: not a string at [data[<k>].id]`(不回顯值)。失敗通道依各入口既有者且**不隨 `autoGenPk` 改變**：
@@ -63,6 +63,12 @@ w-orm 系列共同規則：主鍵 `id` 只有三種情形視為**未帶**：`und
 | `save` | 該筆 `ok: 0` 並附 `err`，同批其他筆照常 |
 | `del` | 該筆 `ok: 0` 並附 `err` |
 | `selectByPk` | 回傳 `null`(主鍵值無效視為查無數據) |
+
+- **主鍵只認自有可列舉之資料屬性**(w-orm 系列共同規則)：列之 `id` 為**繼承**(原型鏈上，如 `Object.create({ id: 'a9' })`，或類別實例原型上之 getter／資料屬性，不論值為字串、數字或物件)或**自有不可列舉**者，視為**未帶**(同 `undefined`、`null`、空字串)。複製後之列保留原型，若把繼承值當主鍵，資料庫(以 JSON 存值)只存自有屬性，會以繼承值為鍵寫入**無 `id` 欄之列**，或與庫內同值之既有列衝突(`insert` 靜默跳過、`insertBulk` 整批 reject、`save` 覆寫該列、`del` 刪除該列)。處置：
+  - `insert`、`insertBulk`、`save`：`autoGenPk` 為 `true` 時補新主鍵(以 `Object.defineProperty` 定義為自有可列舉之資料屬性，不經賦值，故原型上之 setter 不被執行、凍結之原型亦不致拋錯)；為 `false` 時依上述「未帶」之既有訊息整批 reject。
+  - `del`：視為未給主鍵，該筆 `ok: 0` 並附 `invalid id: not a string at [data[<k>].id]`，**不刪除庫內同值之列**；繼承之空字串、數字等本即無效者沿用原訊息(`string is empty`、`not a string`)。繼承之字串亦不送進後端查詢。
+  - 先以既有路徑取值，值為未帶者短路；只有值為「給了」才以 `propertyIsEnumerable` 查描述子(不呼叫 getter，不多讀有效輸入)。繼承之存取器 `id` 仍照既有路徑讀 1 次(拋錯者為固定詞彙 `invalid data: must be a readable value`)，其回傳之值不被使用(含不可讀之值)。
+  - `selectByPk` 收純量 `pk`，不適用；非主鍵欄之繼承欄位之處置不變。
 
 - **讀取即拋錯**(已撤銷之 `Proxy`、`Symbol.toStringTag` 或陷阱拋錯者、拋錯之存取器等)之輸入：走各入口既有之失敗通道(寫入入口與 `selectByPk` 為 `error` 事件恰一次後 reject、資料庫不變；建構為同步 throw)，訊息一律為本套件之固定詞彙 `invalid <名稱>: must be a readable value`——不含拋出者之原訊息與值，亦不轉出呼叫端物件(存取器、`Proxy` 陷阱、巢狀值)拋出之文字。可讀而型別不符者行為不變(輸入無效早退、查無數據、選項採忽略並用預設)。名稱依拒絕之處：
 
@@ -162,6 +168,7 @@ let wo2 = WOrm({ url: './_db', db: 'worm', cl: 'users', funLog: (label, safe, de
 - 改為 reject(主鍵給了而非字串)：`insert`、`insertBulk`、`save` 收到 `id` 為數字、布林、物件、陣列、`String`／`Number`／`Boolean` 包裝物件、`Symbol`、`BigInt`、函數、`Date` 等**非字串**時，原本於 `autoGenPk: true`(預設)下被**靜默換成新產生之主鍵並寫入**(`wsemi` 1.9.69 起 `String` 包裝物件亦然)，現改為拒絕，訊息 `invalid id: not a string at [data[<k>].id]`：`insert`、`insertBulk` 整批 reject，`save` 該筆 `ok: 0` 並附 `err`；`autoGenPk: false` 下原本一律以 `can not <入口> by data[<k>] without valid id when autoGenPk is false` 整批 reject(含 `save`)，現給了而非字串者改為同上訊息與通道(`save` 改為逐筆 `ok: 0`)，未帶(`undefined`、`null`、空字串、鍵不存在)者訊息與整批通道不變。依賴「給了數字主鍵而由套件改配新主鍵」者須改為自行轉成字串，或不給 `id`。見上節「主鍵之未帶與給了」。
 - 改為固定詞彙(讀取即拋錯之輸入)：`data`、`option.returnList`、`opt.url`／`db`／`cl`／`useCache`／`autoGenPk`、`selectByPk` 之 `pk` 及經原型存取器讀出之 `id` 為讀取即拋錯之值(已撤銷之 `Proxy` 等)時，原本拋出或 reject 為該值之**原例外訊息**(如 `Cannot perform 'Object.prototype.toString' on a proxy that has been revoked`)，現改為固定詞彙 `invalid <名稱>: must be a readable value`(不含原例外文字)；失敗通道不變。單元素陣列之 `[0]` 存取器拋錯者仍視為不可讀，同改為固定詞彙。依賴原例外訊息文字者須改比對固定詞彙。
 - 改為固定詞彙(w-orm 系列全族對齊)：① 選項容器本身不可讀(`opt`／`option` 為已撤銷之 `Proxy`、`get` 陷阱拋錯者)，原本拋出或 reject 為**原例外訊息**，現為 `invalid opt: must be a readable value`(建構同步 throw)、`invalid option: must be a readable value`(`insert`、`save`)；② 存取器拋錯(`opt.<鍵>`、`option.returnList`、`option.autoInsert` 為拋錯之存取器，或複本內繼承之存取器、補主鍵時之 setter 拋錯)，原本轉出存取器**拋出之文字**，現為 `invalid opt.<名>`／`invalid option.<名>`／`invalid data: must be a readable value`；③ 複製階段之巢狀不可讀值(資料內之 `id`、列之成員、陣列其後之元素、各欄為已撤銷之 `Proxy` 或拋錯之存取器、原型為 `null` 之 `Date`、過深之巢狀)，原本 reject 之值為**拋出者本身**(其文字、型別皆隨使用端)，現為本套件之 `Error`，訊息 `invalid data: must be a readable value`；④ 上述入口階段拒絕之 `error` 事件，`data` 引數原為呼叫端傳入之原值或其複本，現為 `null`；已關閉之實例其型別標籤不可讀之 `data` 同為 `null`；⑤ 經原型存取器讀出之 `id` 不可讀者，名稱由 `data[<k>].id` 改為 `data`。失敗通道不變(寫入入口 `error` 事件恰一次後 reject、資料庫不變；建構同步 throw)；`del` 之 `id` 讀取拋錯原為整批 reject 並轉出原文字，現為整批 reject 之固定詞彙。依賴原例外文字、拋出者本身或 `error` 事件 `data` 為原值者須改。
+- 改為「未帶」(主鍵只認自有可列舉之資料屬性，w-orm 系列全族規則)：`insert`、`insertBulk`、`save`、`del` 收到列之 `id` 為**繼承**(原型鏈上；類別 getter、`Object.create({ id })`、凍結之原型等)或自有不可列舉者，原本把繼承值當主鍵——以繼承值為鍵寫入**無 `id` 欄之列**(主鍵遺失)，或與庫內同值之既有列衝突：`insert` 靜默跳過(`nInserted: 0`)、`insertBulk` 整批 reject(`can not insertBulk by existed id[...]`)、`save` 覆寫該既有列(`nModified: 1`)、`del` **刪除**該既有列(`nDeleted: 1`)——現視為未帶：`autoGenPk` 為 `true`(預設)時補新主鍵(自有可列舉之屬性)、為 `false` 時以 `can not <入口> by data[<k>] without valid id when autoGenPk is false` 整批 reject，`del` 該筆 `ok: 0` 並附 `invalid id: not a string at [data[<k>].id]`、不刪任何列。繼承值為數字、物件(原本 `insert`／`insertBulk` reject、`save` 該筆 `ok: 0` 為 `not a string`)者同改為未帶；經原型存取器讀出之 `id`，其回傳值(含原本拒收之不可讀值)不再被探測或使用，補主鍵不再執行原型上之 setter。依賴「繼承之 `id` 當主鍵」者須改為自有可列舉之 `id`(如 `Object.assign({}, row)`、以 `{ ...row, id }` 展開)。見上節「主鍵之未帶與給了」。
 - 修正(主鍵為 `Object.prototype` 成員名)：主鍵為 `constructor`、`toString`、`valueOf`、`hasOwnProperty`、`__proto__` 等時，原本 `insert` 回 `{ n: 1, nInserted: 0, ok: 1 }` 而靜默不寫入，`insertBulk` 誤報 `can not insertBulk by existed id[...]`，`save` 回 `nModified: 1`(實為新增)，`del` 回 `nDeleted: 1`(實未刪除任何一列)；以 `__proto__` 為主鍵之紀錄其欄位名還會被誤認為其他主鍵(同批之後筆被判已存在，`save` 時以該欄位值為現值合併而寫入損毀之紀錄)；現主鍵存在與否以 `Map` 判定，與一般字串主鍵行為相同。
 
 ## Documentation

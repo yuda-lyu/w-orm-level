@@ -3,7 +3,8 @@
 > 只記現況,不寫過程(過程見 `../exp/experience.md`);規則細節見 `../rule/rulebook.md`.接續工作先讀本檔.
 
 - 語料 wire 案處置(2026-11-01,orm233): `api-diagwire` 之「wire案歸類全集」對 wsemi 1.9.36 語料 wire 案 23 個全數歸類(DETAIL 9、BRIEF 1、REJECT 2〔T07 與 DETAIL 重疊〕、NA 12);新增之 A11(`genDiagFunLog` 之 `opt.safeKeys`)、C14(`getDiagBriefErr` 之 `types`)、U22(`getDiagSecrets` 之 `conns`)皆判不適用: `src/WOrmLevel.mjs` 只引入 `getDiag`(:23)與 `getDiagSecrets`(:24),兩者不引入 `genDiagFunLog`;宣告為 `paths`(`getStoragePaths`)、`codes:['level']`、`safeKeys:['mode']`(:154-157),無 `types`、`conns`.
-- 最近一次全套驗證(2026-11-20,oro557b2〔第 557 項對齊輪〕,wsemi 1.9.70): `npm test`(`quiet-run --lock`)**4725 passing / 210 pending / 0 failing**(8 分 45 秒,exit 0;210 pending 為既有之 GridFS 案);修前紅(最終測試對修前 `src`)6 檔 1008 案中紅 398;變異新增 33/33 + 既有 R1 9/9、R2 13/14(R2-14 僅原始碼文字鎖定案可殺);`npx eslint` 改動檔 0 error;private-guard CLEAN.
+- 最近一次全套驗證(2026-11-20,olv569〔第 569 項〕,wsemi 1.9.70): `mocha --parallel "test/*.test.mjs" --timeout 180000`(同 `npm test`,於單一 `quiet-run --lock` 內)**4977 passing / 210 pending / 0 failing**(9 分 51 秒,exit 0;210 pending 為既有之 GridFS 案);修前紅(最終測試對修前 `src`)5 檔 1083 案中紅 217;變異 16/16 轉紅(基準 428/428 綠);`npx eslint` 改動檔 0 error;private-guard CLEAN.
+- 前一次全套驗證(2026-11-20,oro557b2〔第 557 項對齊輪〕,wsemi 1.9.70): `npm test`(`quiet-run --lock`)**4725 passing / 210 pending / 0 failing**(8 分 45 秒,exit 0;210 pending 為既有之 GridFS 案);修前紅(最終測試對修前 `src`)6 檔 1008 案中紅 398;變異新增 33/33 + 既有 R1 9/9、R2 13/14(R2-14 僅原始碼文字鎖定案可殺);`npx eslint` 改動檔 0 error;private-guard CLEAN.
 - 前一次全套驗證(2026-11-20,oro557b,wsemi 1.9.70): 4498 passing / 210 pending / 0 failing(8 分 25 秒).
 - 再前一次(2026-11-19,olv492i,wsemi 1.9.69): 4056 passing / 210 pending / 0 failing.
 
@@ -17,6 +18,7 @@
 | **呼叫端給的值之可讀性**(wsemi ≥ 1.9.69 判斷函數回布林後,不可讀之 `data`、`option.returnList`、經原型存取器讀出之 `id`、`selectByPk` 之 `pk`、建構 `opt` 仍走原失敗通道;**2026-11-20 起改用 wsemi `chkReadable`,訊息為固定詞彙 `invalid <名稱>: must be a readable value`**) | **已套(2026-11-19 olv492i 本地探針;2026-11-20 oro557b 改 `chkReadable`)** | **R-PROBE-01**(15 站〔S01~S15,oro557b2 增 S13~S15〕;與 R-WRITE-ERR-01 規則 1 銜接) | **`unit-probe-readable`、`unit-write-pre-error`**(敵意值建構器 `test/lib/hostile.mjs`) |
 | **主鍵(id)之「未帶」與「給了而非字串」**(未帶只有 `undefined`/`null`/`''`;給了而非字串者拒絕、不替換為新主鍵,通道不隨 `autoGenPk` 改變) | **已套(2026-11-20,oro557b)** | **R-PKGIVEN-01** | **`unit-pk-given`**、`unit-wellformed`、`unit-autogenpk` |
 | **全族對齊口徑 A1~A6**(選項容器不可讀 → `invalid opt`/`invalid option`;存取器拋錯與複製階段之巢狀不可讀值 → 固定詞彙、不轉出拋出者之文字;入口階段拒絕之 `error` 事件 `data` 為 `null`;`selectByPk` 不可讀 `pk` reject;主鍵給了而無效) | **已套(2026-11-20,oro557b2)** | **R-ALIGN-01**(A1~A6;與 R-PROBE-01、R-PKGIVEN-01、R-WRITE-ERR-01 銜接) | **`unit-align-readable`**、`unit-probe-readable`、`unit-write-pre-error`、`unit-pk-given` |
+| **主鍵只認自有可列舉之資料屬性**(列之 `id` 為繼承〔原型鏈〕或自有不可列舉者視為未帶:`autoGenPk` true 補新主鍵〔`defineProperty`,不經賦值〕、false 整批 reject;`del` 該筆 `ok:0` 且不刪同值列;繼承存取器之回傳值不探測) | **已套(2026-11-20,olv569,第 569 項)** | **R-PKOWN-01**(與 R-PKGIVEN-01、R-PROBE-01 S12、R-ALIGN-01 A2 銜接) | **`unit-pk-own`**(257 案)、改釘 `unit-pk-given`、`unit-probe-readable`、`unit-align-readable`、`api-diagwire` |
 | 字串良構(主鍵、寫入資料、`opt.url/db/cl`) | 已套 | R-ORMSTR-01 | `unit-wellformed` |
 | 主鍵存在性以 `Map` 判定 | 已套 | R-PKMAP-01 | `unit-protokey` |
 | **診斷輸出與遮罩**(`opt.logDetail`、`opt.funLog`;對外錯誤值遮憑證) | **已套(2026-10-29,mig-level:改用 wsemi 共用實作)** | **R-DIAG-01**(依 dspec〈診斷輸出與遮罩〉) | **`unit-diaglog`、`api-diagwire`、`api-diaglog`** |
@@ -46,6 +48,15 @@
 - 已知邊界(帳本有詳述): 未帶與給了並存且 `autoGenPk` 為 false 時先報未帶;自有屬性之敵意物件主鍵於 `cloneDeep` 即拋錯(2026-11-20 起為固定詞彙 `invalid data: must be a readable value`,非 `not a string`);範圍外 `Date` 之 id 先報 Date.
 - 版號/發布: 由主控與使用者處理(本輪未動 `package.json` 之 `version`,未 commit).
 
+## R-PKOWN-01 現況(olv569,第 569 項)
+
+- 實作(`src/WOrmLevel.mjs`): `isOwnPk`(`propertyIsEnumerable`)、`setPk`(物件列且非自有可列舉者 `defineProperty`,其餘賦值)、`procPk`(`noPk = id 未帶 || !isOwnPk(v)`,與取值同一 `try`)、`delCore`(整批取鍵與逐筆各於同一次 `guardRead` 內取值並查描述子;繼承之有效字串視為未給、不送進 `getMany`).`guardRead` 呼叫數仍為 10.
+- 行為: 繼承/自有不可列舉之 `id` = 未帶(`autoGenPk` true 補新主鍵、false 整批 reject〔`save` 亦然〕;`del` 該筆 `ok:0`,同值列不被刪);繼承存取器之 getter 讀 1 次(`del` 2 次,既有),回傳值不探測不使用;補主鍵不執行原型 setter.`selectByPk` 不適用.
+- 不相容變更: README〈Breaking changes〉、JSDoc(類別頭註、`opt.autoGenPk`、四個 `@param data`)、帳本〈破壞性變更紀錄〉.原型存取器 `id` 之舊契約(R-PROBE-01 S12:回傳不可讀值拒為 `invalid data`、R-PKGIVEN-01:回傳非字串拒為 `not a string`、回傳字串以之為鍵寫入無 `id` 欄之列)已移除,相關既有測試改釘新契約.
+- 已知限制(帳本有詳述): `save` 逐筆路徑之外來值遮罩(`outMsg`)通道無使用端可達之刺激,僅餘原始碼鎖定;非主鍵欄之繼承欄位處置不變.
+- 驗證(2026-11-20,olv569): 見第 569 項報告(修前紅、修後綠、變異、全套).
+- 版號/發布: 由主控與使用者處理(本輪未動 `package.json` 之 `version`,未 commit).
+
 ## R-ALIGN-01 現況(oro557b2,第 557 項對齊輪)
 
 - 實作(`src/WOrmLevel.mjs`): `getOptVal`(建構 `opt` 容器/成員)、`getOpt`(`option`)、`copyData`(`cloneDeep` 包裝,4 個寫入入口)、`guardRead`(複本之後之讀取: `toJSON`、繼承存取器、`merge`、`del` 之 id)、`mkInErr`/`inErrs`(固定詞彙之本套件錯誤與登記,各 Core 之 `catch` 見之即 `data = null`)、`procPk`(id 讀取與補主鍵指派)、`procClosed`(事件 `data` 之標籤可讀性).
@@ -57,7 +68,7 @@
 ## 已知缺口與待辦
 
 0. R-PROBE-01 已知邊界(帳本有詳述,待裁示者為③):①僅 `has` 陷阱拋錯之 Proxy 作為 `option.returnList`、`opt.useCache`、`opt.autoGenPk` 時視為可讀而型別不符(忽略/預設);②有狀態(只在特定次讀取拋錯)之敵意物件結果依讀取次數;③wsemi 1.9.69 之包裝物件(`new String`/`new Boolean`/`new Number`)語意變更使 `opt.url` 等、`returnList`、`[new String('')]` 之行為改變(後者會寫入空值紀錄),是否於本庫補守或請 wsemi 調整待裁示(`id` 為包裝物件者已由 R-PKGIVEN-01 拒收).
-0a. 〔已由主控裁定,2026-11-20 oro557b2 落實〕讀取即拋錯之 `id` 之措辭: 複製階段(自有屬性)與經原型存取器讀出而不可讀者,皆為 `invalid data: must be a readable value`(原失敗通道,`save` 亦整批 reject,`error` 事件 `data` 為 `null`);可讀而非字串者為 `invalid id: not a string`.
+0a. 〔已由主控裁定,2026-11-20 oro557b2 落實〕讀取即拋錯之 `id` 之措辭: 複製階段(自有屬性)與經原型存取器讀出而不可讀者,皆為 `invalid data: must be a readable value`(原失敗通道,`save` 亦整批 reject,`error` 事件 `data` 為 `null`);可讀而非字串者為 `invalid id: not a string`.〔2026-11-20 olv569 更新: 僅適用於**自有可列舉**之 `id`;經原型存取器讀出之 `id` 屬繼承,視為未帶,其回傳值不探測不使用(R-PKOWN-01),存取器自身拋錯者仍為 `invalid data`.〕
 1. 固定詞彙訊息回顯呼叫端輸入(如 `can not insertBulk by existed id[<id>]`、`invalid find: unsupported column name [<欄名>]`、`invalid data: .. at [data[0].<鍵名>]`)屬回傳契約,不遮;若要去回顯須另案裁示(破壞性).
 2. 外來值帶自有存取器/可偵測 Proxy 者,reject 與 'error' 事件交遮罩副本(R-WRITE-ERR-01 規則 1「reject 為拋出者本身」之例外,`unit-write-pre-error` 該案期望已改):待主控確認此契約變化.
 3. 本套件無憑證來源,對外遮罩只靠 wsemi 之通用規則(網址帳密、`password=`/`token=` 鍵值對、Bearer);reject 清單為空,短密碼等 wsemi 已知限制不適用.

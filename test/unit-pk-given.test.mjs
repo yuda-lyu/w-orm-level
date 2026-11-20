@@ -333,8 +333,10 @@ describe('pk given', function() {
         }
     })
 
-    //經類別實例原型上之存取器讀出之id(複本保留原型, 存取器於複本上仍執行呼叫端之程式)
-    describe('id read through a prototype accessor: a readable non-string is rejected like an own value, a string is kept', function() {
+    //經類別實例原型上之存取器讀出之id(複本保留原型, 存取器於複本上仍執行呼叫端之程式): 屬繼承而非自有可列舉之id, 視為「未帶」(帳本R-PKOWN-01, 2026-11-20 olv569起),
+    //回傳之值(字串、數字、包裝物件、不可讀者)不被使用: autoGenPk為true補新主鍵(不以存取器回傳之字串為鍵), 為false依「未帶」整批reject;
+    //2026-11-20前此處為「回傳字串者以該字串為鍵(值不含id欄位)、可讀而非字串者拒絕為not a string」, 即第569項之缺陷(主鍵遺失/與同值既有列衝突)
+    describe('id read through a prototype accessor: an inherited id is not a given id, whatever the accessor returns (R-PKOWN-01)', function() {
         let mkInst = (mkId) => {
             class P {
                 constructor() {
@@ -362,29 +364,32 @@ describe('pk given', function() {
                     { key: 'number 5', mk: () => 5 },
                     { key: 'String wrapper', mk: () => new String('a') }, // eslint-disable-line no-new-wrappers
                     { key: 'Proxy whose ownKeys throws (tag readable)', mk: proxyOwnKeysThrows },
+                    { key: 'a string', mk: () => 'acc1' },
                 ]) {
-                    for (let fn of ['insert', 'insertBulk']) {
-                        it(`${fn}: accessor returns ${v.key}: rejects with the fixed message, not the former assignment TypeError or a generated id`, async function() {
-                            let out = await ob.run(() => wo[fn](mkInst(v.mk)))
-                            await chkRejBatch(wo, out, fn, 'invalid id: not a string at [data[0].id]')
-                        })
+                    for (let fn of ['insert', 'insertBulk', 'save']) {
+                        if (apk) {
+                            it(`${fn}: accessor returns ${v.key}: not a given id, a generated id is stored (the accessor's value is not the key)`, async function() {
+                                let out = await ob.run(() => wo[fn](mkInst(v.mk)))
+                                assert.strict.equal(out.ok, true, `${fn} should resolve, got ${out.err && out.err.message}`)
+                                if (fn === 'save') {
+                                    assert.deepStrictEqual(out.val, [{ n: 1, nInserted: 1, nModified: 0, ok: 1 }])
+                                }
+                                else {
+                                    assert.deepStrictEqual(out.val, { n: 1, nInserted: 1, ok: 1 })
+                                }
+                                assert.deepStrictEqual(await ids(wo), ['<gen>', 'seed1'])
+                                assert.strict.equal(await wo.selectByPk('acc1'), null)
+                                assert.strict.equal(out.evs.filter((x) => x.t === 'error').length, 0)
+                            })
+                        }
+                        else {
+                            it(`${fn}: accessor returns ${v.key}: not a given id, rejected as not given (whole batch, even for save)`, async function() {
+                                let out = await ob.run(() => wo[fn](mkInst(v.mk)))
+                                await chkRejBatch(wo, out, fn, `can not ${fn} by data[0] without valid id when autoGenPk is false`)
+                            })
+                        }
                     }
-                    it(`save: accessor returns ${v.key}: that item gives ok 0 with the fixed message`, async function() {
-                        let out = await ob.run(() => wo.save(mkInst(v.mk)))
-                        assert.strict.equal(out.ok, true)
-                        assert.deepStrictEqual(out.val.map((x) => [x.ok, x.err]), [[0, 'invalid id: not a string at [data[0].id]']])
-                        assert.deepStrictEqual(await ids(wo), ['seed1'])
-                    })
                 }
-                it('insert: accessor returns a string: the string is the key', async function() {
-                    let out = await ob.run(() => wo.insert(mkInst(() => 'acc1')))
-                    assert.strict.equal(out.ok, true)
-                    assert.deepStrictEqual(out.val, { n: 1, nInserted: 1, ok: 1 })
-
-                    //鍵為存取器回傳之字串(值不含id欄位: 原型存取器不被cloneDeep複製, 屬既有行為, 不在此釘住值之內容)
-                    assert.strict.notEqual(await wo.selectByPk('acc1'), null)
-                    assert.strict.equal((await wo.select()).length, 2)
-                })
                 it('insert: accessor that itself throws: the fixed message (the thrower\'s text is not echoed), one error event with data null, database unchanged [A2, A4]', async function() {
                     let out = await ob.run(() => wo.insert(mkInst(() => {
                         throw new Error('accessor-boom')
