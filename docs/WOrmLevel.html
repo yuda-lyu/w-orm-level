@@ -29,7 +29,7 @@
 <nav >
     
     
-    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="WOrmLevel.html">WOrmLevel</a><ul class='methods'><li data-type='method'><a href="WOrmLevel.html#.close">close</a></li><li data-type='method'><a href="WOrmLevel.html#.delAllCore">delAllCore</a></li><li data-type='method'><a href="WOrmLevel.html#.delCore">delCore</a></li><li data-type='method'><a href="WOrmLevel.html#.insertBulkCore">insertBulkCore</a></li><li data-type='method'><a href="WOrmLevel.html#.insertCore">insertCore</a></li><li data-type='method'><a href="WOrmLevel.html#.saveCore">saveCore</a></li><li data-type='method'><a href="WOrmLevel.html#.selectByPkCore">selectByPkCore</a></li><li data-type='method'><a href="WOrmLevel.html#.selectCore">selectCore</a></li><li data-type='method'><a href="WOrmLevel.html#~serialize">serialize</a></li></ul></li></ul><h3>Global</h3><ul><li><a href="global.html#probeReadable">probeReadable</a></li><li><a href="global.html#probeTag">probeTag</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="WOrmLevel.html">WOrmLevel</a><ul class='methods'><li data-type='method'><a href="WOrmLevel.html#.close">close</a></li><li data-type='method'><a href="WOrmLevel.html#.delAllCore">delAllCore</a></li><li data-type='method'><a href="WOrmLevel.html#.delCore">delCore</a></li><li data-type='method'><a href="WOrmLevel.html#.insertBulkCore">insertBulkCore</a></li><li data-type='method'><a href="WOrmLevel.html#.insertCore">insertCore</a></li><li data-type='method'><a href="WOrmLevel.html#.saveCore">saveCore</a></li><li data-type='method'><a href="WOrmLevel.html#.selectByPkCore">selectByPkCore</a></li><li data-type='method'><a href="WOrmLevel.html#.selectCore">selectCore</a></li><li data-type='method'><a href="WOrmLevel.html#~serialize">serialize</a></li></ul></li></ul>
     
 </nav>
 
@@ -88,8 +88,9 @@ mode為操作別字串，可為'select'、'selectByPk'、'insert'、'insertBulk'
 data為本次操作之輸入數據，無輸入數據者為null。
 err為錯誤訊息字串，內容與正規管道所送出者一致。
 整批性錯誤於reject之前發出；逐筆失敗於該筆結果定案後發出，每筆一次。
-insert、insertBulk、save與del因輸入本身導致之失敗(如原型為null之Date使複製拋錯、存取器拋錯)亦屬整批性錯誤，同樣於reject之前恰發出一次、不發出change事件、資料庫不變；
-拋錯於複製建立之前者，data為呼叫端傳入之原值，其後者為複製；err為拋出者之原訊息(呼叫端自行拋出之值或訊息原樣通過，無法轉為字串者以固定訊息unknown error取代)，本套件不另行回顯數據內容。
+insert、insertBulk、save與del因呼叫端給的值不可讀(讀取即拋錯，如已撤銷之Proxy、陷阱或存取器拋錯、複製階段之巢狀不可讀值、原型為null之Date使複製拋錯)導致之失敗亦屬整批性錯誤，同樣於reject之前恰發出一次、不發出change事件、資料庫不變；
+此類拒絕發生於入口階段(讀取option或data、複製data)，data固定為null(不把不可讀之值交給訂閱函數)，err為固定詞彙invalid &lt;名稱&gt;: must be a readable value(不含拋出者之原訊息與值，詳見下方呼叫端給的值之可讀性)；
+其餘整批性錯誤(如主鍵衝突、Date範圍外、主鍵檢核不合格)data為本次操作之數據複本，err中後端或使用端回呼拋出之外來值依下列診斷規則處置。
 註: 逐筆失敗時整批仍resolve，故收到本事件不表示該次呼叫失敗；正常結果(如查無數據、主鍵未命中、全數已存在)不發出本事件。</p>
 <p>註: 本套件之主鍵欄位固定為id，尚未支援指定其他欄位為主鍵。
 註: level無條件寫入、無比較並交換亦無交易，故insert之[檢查主鍵不存在與寫入]與save之[查找主鍵與更新或插入]，
@@ -107,6 +108,24 @@ insert、insertBulk、save與del因輸入本身導致之失敗(如原型為null�
 訊息為固定詞彙而不回顯值：invalid id: 原因 at [data[k].id]、invalid data: 原因 at [data[k].路徑](k為批次索引，單一物件為0；不合格之鍵名以<invalid key>標示)，
 原因為string contains lone surrogate、string contains NUL(僅主鍵)、not a string或string is empty(del之id未給、非字串或空字串)。
 U+FFFD本身與成對代理(emoji等)為良構，照常接受。既有資料不遷移，檢出與清除法見README。</li>
+</ol>
+<p>主鍵(id)之未帶與給了(w-orm系列規則，帳本R-PKGIVEN-01)：只有id為undefined、null、空字串(含鍵不存在)視為未帶，autoGenPk為true時自動產生，
+為false時整批reject(save亦然，不降為逐筆)，訊息為can not &lt;入口&gt; by data[k] without valid id when autoGenPk is false；其餘一律視為給了，
+給了而非字串(數字、布林、物件、陣列、String包裝物件、Symbol、BigInt等)者不補值亦不替換為新產生之主鍵(主鍵為資料之身分，給了錯值卻換成新主鍵寫入，事後無從對應)，
+依各入口既有之失敗通道拒絕，通道不隨autoGenPk改變，訊息為固定詞彙invalid id: not a string at <a href="%E4%B8%8D%E5%9B%9E%E9%A1%AF%E5%80%BC">data[k].id</a>：
+insert與insertBulk整批reject(error事件於reject之前恰一次、不發change、資料庫不變)，save與del該筆ok為0並附err，selectByPk回null。</p>
+<p>呼叫端給的值之可讀性(w-orm系列規則，帳本R-PROBE-01，用wsemi之chkReadable)：呼叫端給的資料(data)、選項(opt.url、opt.db、opt.cl、opt.useCache、opt.autoGenPk、option.returnList)、
+selectByPk之pk與經類別實例原型上之存取器讀出之id，若為讀取即拋錯之值(已撤銷之Proxy、Symbol.toStringTag或陷阱拋錯者、單元素陣列之[0]存取器拋錯者等)，
+走各入口既有之失敗通道(寫入入口與selectByPk為error事件恰一次後reject、資料庫不變，建構為同步throw)，訊息為固定詞彙invalid &lt;名稱&gt;: must be a readable value，
+不含拋出者之原訊息與值，亦不轉出呼叫端物件(存取器、Proxy陷阱、巢狀值)拋出之文字；可讀而型別不符者行為不變(輸入無效早退、查無數據、選項採忽略)。名稱依拒絕之處：</p>
+<ol>
+<li>選項容器本身不可讀(opt或option為已撤銷之Proxy、get陷阱或Symbol.toStringTag拋錯者，讀其成員即拋錯)：invalid opt(建構)、invalid option(insert與save之option)；</li>
+<li>容器可讀而其成員之讀取拋錯(拋錯之存取器，或僅對該鍵拋錯之get陷阱)：invalid opt.&lt;名&gt;(建構)、invalid option.returnList、invalid option.autoInsert；opt.&lt;名&gt;與option.returnList之值本身不可讀者名稱同(option.autoInsert只取真值，不檢其值之可讀性)；</li>
+<li>資料不可讀(含複製階段之巢狀不可讀值：資料內之id、列之成員、陣列其後之元素、各欄為已撤銷之Proxy或拋錯之存取器、複本原型上拋錯之存取器、原型為null之Date、過深之巢狀等；
+複製、補主鍵之指派與良構檢核讀取複本時拋錯者不分頂層與巢狀一律同詞彙)：invalid data；</li>
+<li>selectByPk之pk不可讀：invalid pk(可讀而非字串者回null)。
+入口階段之拒絕(上列1~3)，error事件之data為null；opt.logDetail與opt.funLog由wsemi之getDiag處置(診斷出口永不失敗，不經上述)。
+已關閉(close後)之實例於入口先拒絕，error事件之data為呼叫端傳入之原值，惟其型別標籤不可讀者為null。</li>
 </ol>
 <p>診斷輸出與遮罩(w-orm系列規則，選項名稱與語意同w-serv-orm；遮罩、摘要與出口皆用wsemi之共用實作getDiag，規則見wsemi之getDiag說明與規格〈診斷輸出與遮罩〉)：
 本套件唯一會自行輸出之情形，是change或error事件之訂閱函數拋錯被攔下時(攔下後不影響本次操作之回傳與事件發出)，所有輸出皆經單一出口(wsemi之getDiag)，其餘情形不輸出：</p>
@@ -131,7 +150,7 @@ errCode僅在拋出值之自有資料屬性code為wsemi明列之機器代碼(lib
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line96">line 96</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line116">line 116</a>
     </li></ul></dd>
     
 
@@ -240,7 +259,7 @@ errCode僅在拋出值之自有資料屬性code為wsemi明列之機器代碼(lib
                 </td>
             
 
-            <td class="description last"><p>輸入設定物件，預設{}</p>
+            <td class="description last"><p>輸入設定物件，預設{}；讀取即拋錯者(opt本身不可讀，或成員為拋錯之存取器)建構時同步throw(invalid opt: must be a readable value、invalid opt.&lt;名&gt;: must be a readable value)</p>
                 <h6>Properties</h6>
                 
 
@@ -463,7 +482,7 @@ errCode僅在拋出值之自有資料屬性code為wsemi明列之機器代碼(lib
                 </td>
             
 
-            <td class="description last"><p>輸入insert、insertBulk與save於數據未帶有效主鍵(本套件為id欄位)時是否自動產生主鍵值，預設true；給false代表主鍵改由呼叫端自備，套件不產生亦不檢查其唯一性與格式，未帶有效主鍵者將reject</p></td>
+            <td class="description last"><p>輸入insert、insertBulk與save於數據未帶有效主鍵(本套件為id欄位)時是否自動產生主鍵值，預設true；給false代表主鍵改由呼叫端自備，套件不產生亦不檢查其唯一性，未帶主鍵(id為undefined、null、空字串或鍵不存在)者將reject；給了而非字串者不論此選項皆拒絕(見上述主鍵之未帶與給了)</p></td>
         </tr>
 
     
@@ -639,7 +658,7 @@ errCode僅在拋出值之自有資料屬性code為wsemi明列之機器代碼(lib
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1523">line 1523</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1677">line 1677</a>
     </li></ul></dd>
     
 
@@ -772,7 +791,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1417">line 1417</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1571">line 1571</a>
     </li></ul></dd>
     
 
@@ -950,7 +969,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1219">line 1219</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1366">line 1366</a>
     </li></ul></dd>
     
 
@@ -1116,7 +1135,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line877">line 877</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1014">line 1014</a>
     </li></ul></dd>
     
 
@@ -1208,7 +1227,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
 
             
 
-            <td class="description last"><p>輸入數據物件或陣列</p></td>
+            <td class="description last"><p>輸入數據物件或陣列；各筆主鍵id未帶者依autoGenPk補值或整批reject，給了而非字串者整批reject(訊息invalid id: not a string at [data[k].id])，詳見類別說明</p></td>
         </tr>
 
     
@@ -1281,7 +1300,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line722">line 722</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line849">line 849</a>
     </li></ul></dd>
     
 
@@ -1389,7 +1408,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
                 </td>
             
 
-            <td class="description last"><p>輸入數據物件或陣列</p></td>
+            <td class="description last"><p>輸入數據物件或陣列；各筆主鍵id未帶者依autoGenPk補值或整批reject，給了而非字串者整批reject(訊息invalid id: not a string at [data[k].id])，詳見類別說明</p></td>
         </tr>
 
     
@@ -1429,7 +1448,7 @@ Date條件於本後端轉為ISO字串後以字典序比較(與字串型欄位亦
                 </td>
             
 
-            <td class="description last"><p>輸入設定物件，預設為{}</p>
+            <td class="description last"><p>輸入設定物件，預設為{}；讀取即拋錯者(option本身不可讀，或成員為拋錯之存取器)整批reject(invalid option: must be a readable value、invalid option.returnList: must be a readable value)</p>
                 <h6>Properties</h6>
                 
 
@@ -1570,7 +1589,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line999">line 999</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line1141">line 1141</a>
     </li></ul></dd>
     
 
@@ -1678,7 +1697,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
                 </td>
             
 
-            <td class="description last"><p>輸入數據物件或陣列</p></td>
+            <td class="description last"><p>輸入數據物件或陣列；各筆主鍵id未帶者依autoGenPk補值或整批reject，給了而非字串者該筆ok為0並附err(訊息invalid id: not a string at [data[k].id])，詳見類別說明</p></td>
         </tr>
 
     
@@ -1718,7 +1737,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
                 </td>
             
 
-            <td class="description last"><p>輸入設定物件，預設為{}</p>
+            <td class="description last"><p>輸入設定物件，預設為{}；讀取即拋錯者(option本身不可讀，或成員為拋錯之存取器)整批reject(invalid option: must be a readable value、invalid option.autoInsert: must be a readable value)</p>
                 <h6>Properties</h6>
                 
 
@@ -1858,7 +1877,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line646">line 646</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line771">line 771</a>
     </li></ul></dd>
     
 
@@ -1947,7 +1966,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
 
             
 
-            <td class="description last"><p>輸入主鍵值字串，本套件之主鍵欄位為id</p></td>
+            <td class="description last"><p>輸入主鍵值字串，本套件之主鍵欄位為id；給了而非字串(數字、String包裝物件等)者視為主鍵值無效，回傳null；讀取即拋錯者(已撤銷之Proxy等)reject，訊息為invalid pk: must be a readable value</p></td>
         </tr>
 
     
@@ -2018,7 +2037,7 @@ autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line574">line 574</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line699">line 699</a>
     </li></ul></dd>
     
 
@@ -2203,7 +2222,7 @@ select亦納入序列化，令其不致與寫入之批次替換交錯。</p>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line214">line 214</a>
+        <a href="WOrmLevel.mjs.html">WOrmLevel.mjs</a>, <a href="WOrmLevel.mjs.html#line303">line 303</a>
     </li></ul></dd>
     
 
@@ -2287,7 +2306,7 @@ select亦納入序列化，令其不致與寫入之批次替換交錯。</p>
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Fri Nov 20 2026 01:03:14 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Fri Nov 20 2026 08:44:12 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>

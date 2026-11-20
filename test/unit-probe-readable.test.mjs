@@ -2,22 +2,22 @@ import assert from 'assert'
 import fs from 'fs'
 import w from 'wsemi'
 import isearr from 'wsemi/src/isearr.mjs'
+import iseobj from 'wsemi/src/iseobj.mjs'
 import cloneDeep from 'lodash-es/cloneDeep.js'
 import WOrm from '../src/WOrmLevel.mjs'
-import { probeTag, probeReadable } from '../src/probeReadable.mjs'
 import { mkObserver } from './lib/mkObserver.mjs'
 import { arr1Getter, proxyOwnKeysThrows, proxyTagThrows, proxyRevoked, proxyGopdThrows, proxyProtoThrows, protoChainOwnKeysThrows, symbolOnlyGopdThrows, arrLenThrows, arrRevoked } from './lib/hostile.mjs'
 
 
-//呼叫端給的值之可讀性探針(帳本R-PROBE-01): wsemi 1.9.69起判斷函數(isestr、isbol、iseobj、isearr等)對讀取即拋錯之值(已撤銷之Proxy、Symbol.toStringTag或陷阱拋錯者、元素存取器拋錯之陣列等)
-//回false而不拋錯, 本套件原借判斷函數之拋錯而成立之防線改由明確之探針(src/probeReadable.mjs)判定. 規則(各案註解之[規則N]):
-//  1. 站點之判斷函數回false時以探針分辨[不可讀]與[可讀而型別不符], 不可讀者走該站點之原失敗通道: 寫入入口(寫入方法之data、option.returnList與id)與selectByPk(pk)為error事件恰一次且先於reject、不發change、資料庫不變、其後之佇列照常;
-//     建構層(opt.url、db、cl、useCache、autoGenPk)為同步throw原錯誤、不建立資料夾
-//  2. 訊息為拋出者之原訊息(不被改寫)
-//  3. 可讀而型別不符者行為不變: data走輸入無效早退(n:0或[]), pk回null, returnList、useCache、autoGenPk、db、cl採忽略(預設)
-//  4. 探針不呼叫存取器(陣列length為1時讀[0]為唯一例外, 同isearr之依賴); 判斷函數回true(有效輸入)時不探針, 不增加其讀取次數
-//  5. 內部值(cloneDeep之複本之自有欄位、資料庫讀出值、錯誤物件之message)不探針; 惟複本保留原型, 經原型存取器讀出之id仍屬呼叫端給的值(procPk站點)
-//寫入方法之data站點(insert、insertBulk、save、del)之敵意輸入案見unit-write-pre-error
+//呼叫端給的值之可讀性(帳本R-PROBE-01; 2026-11-20起改用wsemi之chkReadable, 刪除本地之src/probeReadable.mjs): wsemi 1.9.69起判斷函數(isestr、isbol、iseobj、isearr等)對讀取即拋錯之值
+//(已撤銷之Proxy、Symbol.toStringTag或陷阱拋錯者、元素存取器拋錯之陣列等)回false而不拋錯. 規則(各案註解之[規則N]):
+//  1. 站點之判斷函數回false時以chkReadable分辨[不可讀]與[可讀而型別不符], 不可讀者走該站點之原失敗通道: 寫入入口(寫入方法之data、option.returnList與經原型存取器讀出之id)與selectByPk(pk)為error事件恰一次且先於reject、
+//     不發change、資料庫不變、其後之佇列照常; 建構層(opt.url、db、cl、useCache、autoGenPk)為同步throw、不建立資料夾
+//  2. 訊息為固定詞彙invalid <名稱>: must be a readable value(V19), 不含原例外文字(V20): 名稱為opt、opt.url、opt.db、opt.cl、opt.useCache、opt.autoGenPk、option、option.returnList、option.autoInsert、pk、data(經原型存取器讀出之id同名稱data; 2026-11-20 oro557b2起, 原data[k].id改為data)
+//  3. 可讀而型別不符者行為不變: data走輸入無效早退(n:0或[]), pk回null, returnList、useCache、autoGenPk、db、cl採忽略(預設);透明之Proxy為可讀; 僅Symbol鍵之Proxy(for...in不處理Symbol鍵)為可讀
+//  4. chkReadable不呼叫存取器: 單元素陣列之[0]存取器(isearr唯一依賴元素值之情形)由呼叫端於try內自讀; 判斷函數回true(有效輸入)時不探測, 不增加其讀取次數
+//  5. 內部值(cloneDeep之複本之自有欄位、資料庫讀出值、錯誤物件之message)不探測; 惟複本保留原型, 經原型存取器讀出之id仍屬呼叫端給的值(procPk站點)
+//寫入方法之data站點(insert、insertBulk、save、del)之敵意輸入案見unit-write-pre-error; 主鍵之未帶與給了而非字串見unit-pk-given
 describe('probe-readable', function() {
     let url = './test/_tmp/probe-readable'
 
@@ -27,6 +27,14 @@ describe('probe-readable', function() {
         let wo = WOrm({ url: `${url}/${name}`, db: 'worm', cl: name, ...opt })
         opened.push(wo)
         return wo
+    }
+    //proxyEmptyArrOwnKeysThrows, 空陣列之Proxy且ownKeys陷阱拋錯(型別標籤為陣列; iseobj、isearr皆為假, 為輸入無效而非不可讀)
+    let proxyEmptyArrOwnKeysThrows = () => {
+        return new Proxy([], {
+            ownKeys() {
+                throw new Error('ownKeys-boom')
+            },
+        })
     }
     //proxyHasThrows, 僅has陷阱拋錯(型別標籤可讀)
     let proxyHasThrows = () => {
@@ -55,116 +63,53 @@ describe('probe-readable', function() {
         w.fsDeleteFolder(url)
     })
 
-    //hostiles, 敵意值全集: tag為probeTag是否拋錯(型別標籤不可讀), msg為拋出者之原訊息
+    //hostiles, 標籤不可讀之敵意值(已撤銷之Proxy、Symbol.toStringTag拋錯者、已撤銷之陣列Proxy): 純量站點(選項、pk、id)只讀標籤, 僅此類不可讀; msg為其原例外訊息(固定詞彙訊息不得含之)
     let hostiles = [
-        { key: 'revoked Proxy', mk: proxyRevoked, tag: true, msg: /revoked/i },
-        { key: 'Proxy whose toStringTag read throws', mk: proxyTagThrows, tag: true, msg: 'tag-boom' },
-        { key: 'Proxy whose ownKeys throws', mk: proxyOwnKeysThrows, tag: false, msg: 'ownKeys-boom' },
-        { key: 'Proxy whose getOwnPropertyDescriptor throws', mk: proxyGopdThrows, tag: false, msg: 'gopd-boom' },
-        { key: 'Proxy whose getPrototypeOf throws', mk: proxyProtoThrows, tag: false, msg: 'proto-boom' },
-        { key: 'one-element array whose [0] getter throws', mk: arr1Getter, tag: false, msg: 'elem-getter-boom' },
-        { key: 'array Proxy whose length read throws', mk: arrLenThrows, tag: false, msg: 'len-boom' },
-        { key: 'revoked array Proxy', mk: arrRevoked, tag: true, msg: /revoked/i },
-        { key: 'object whose prototype is a Proxy whose ownKeys throws', mk: protoChainOwnKeysThrows, tag: false, msg: 'ownKeys-boom' },
+        { key: 'revoked Proxy', mk: proxyRevoked, msg: /revoked/i },
+        { key: 'Proxy whose toStringTag read throws', mk: proxyTagThrows, msg: /tag-boom/ },
+        { key: 'revoked array Proxy', mk: arrRevoked, msg: /revoked/i },
     ]
-    let chkMsg = (err, msg) => {
-        assert.strict.ok(err instanceof Error, 'should throw the original Error')
-        assert.strict.ok(msg instanceof RegExp ? msg.test(err.message) : err.message === msg, `message should be the thrower's own message, got "${err.message}"`)
+
+    //chkRd, 固定詞彙(規則2): 訊息全等於invalid <名稱>: must be a readable value, 為套件自身之Error, 且不含原例外文字
+    let rdMsg = (name) => `invalid ${name}: must be a readable value`
+    let chkRd = (err, name, h) => {
+        assert.strict.ok(err instanceof Error, 'should throw an Error')
+        assert.strict.equal(err.message, rdMsg(name))
+        assert.strict.ok(!h.msg.test(err.message), 'the original exception text must not be echoed')
     }
 
-    describe('probe functions (src/probeReadable.mjs)', function() {
-        //可讀值: 純量、一般物件、陣列、特殊物件與不改變行為之透明Proxy
-        let readables = [
-            { key: 'undefined', mk: () => undefined },
-            { key: 'null', mk: () => null },
-            { key: 'number', mk: () => 123 },
-            { key: 'empty string', mk: () => '' },
-            { key: 'string', mk: () => 'abc' },
-            { key: 'boolean', mk: () => true },
-            { key: 'symbol', mk: () => Symbol('s') },
-            { key: 'bigint', mk: () => 12n },
-            { key: 'plain object', mk: () => ({ id: 'a', n: { x: 1 } }) },
-            { key: 'null-proto object', mk: () => Object.assign(Object.create(null), { id: 'a' }) },
-            { key: 'empty array', mk: () => [] },
-            { key: 'one-element array', mk: () => [{ id: 'a' }] },
-            { key: 'two-element array', mk: () => [{ id: 'a' }, { id: 'b' }] },
-            { key: 'Date', mk: () => new Date(0) },
-            { key: 'null-proto Date', mk: () => Object.setPrototypeOf(new Date(0), null) },
-            { key: 'Buffer', mk: () => Buffer.from('abc') },
-            { key: 'Map', mk: () => new Map([[1, 2]]) },
-            { key: 'function', mk: () => function() {} },
-            { key: 'transparent Proxy (object)', mk: () => new Proxy({ id: 'a' }, {}) },
-            { key: 'transparent Proxy (array)', mk: () => new Proxy([{ id: 'a' }], {}) },
-            { key: 'Proxy with only Symbol keys whose getOwnPropertyDescriptor throws (for...in ignores Symbol keys)', mk: symbolOnlyGopdThrows },
-        ]
-        for (let r of readables) {
-            it(`readable (${r.key}): neither probe throws [rule 1: readable values are not rejected]`, function() {
-                assert.strict.doesNotThrow(() => probeTag(r.mk()))
-                assert.strict.doesNotThrow(() => probeReadable(r.mk()))
-            })
-        }
-
-        it('probeTag returns the internal tag [rule 1]', function() {
-            assert.strict.equal(probeTag({}), '[object Object]')
-            assert.strict.equal(probeTag([]), '[object Array]')
-            assert.strict.equal(probeTag('s'), '[object String]')
-            assert.strict.equal(probeTag(null), '[object Null]')
+    describe('single owner: wsemi chkReadable (the local probe module is removed)', function() {
+        let dirSrc = './src'
+        it('src/probeReadable.mjs does not exist; WOrmLevel.mjs imports wsemi chkReadable and no other probe [rule: one owner]', function() {
+            assert.strict.equal(fs.existsSync(`${dirSrc}/probeReadable.mjs`), false)
+            let code = fs.readFileSync(`${dirSrc}/WOrmLevel.mjs`, 'utf8')
+            assert.strict.ok(/import chkReadable from 'wsemi\/src\/chkReadable\.mjs'/.test(code))
+            assert.strict.ok(!/probeReadable|probeTag/.test(code.replace(/\/\/.*$/gm, '')), 'no local probe function is called')
         })
-
-        for (let h of hostiles) {
-            it(`${h.key}: probeReadable throws the original error [rules 1, 2]`, function() {
-                assert.strict.throws(() => probeReadable(h.mk()), (err) => {
-                    chkMsg(err, h.msg)
-                    return true
-                })
-            })
-            it(`${h.key}: probeTag ${h.tag ? 'throws the original error' : 'does not throw (only the type tag is read)'} [rules 1, 2]`, function() {
-                if (h.tag) {
-                    assert.strict.throws(() => probeTag(h.mk()), (err) => {
-                        chkMsg(err, h.msg)
-                        return true
-                    })
-                }
-                else {
-                    assert.strict.doesNotThrow(() => probeTag(h.mk()))
-                }
-            })
-        }
-
-        it('does not call accessors of a plain object [rule 4]', function() {
-            let n = 0
-            let o = {
-                get a() {
-                    n++
-                    return 1
-                },
-                b: 2,
-            }
-            probeReadable(o)
-            assert.strict.equal(n, 0)
+        it('chkReadable call sites are exactly the 8 inventoried ones (chkOptReadable for the 5 opt values, getOptVal opt container, getOpt option container, procClosed event data, chkDataReadable for the 4 data sites, procPk id, selectByPk pk, option.returnList) [rule 1]', function() {
+            let code = fs.readFileSync(`${dirSrc}/WOrmLevel.mjs`, 'utf8').split('\n').filter((ln) => !/^\s*\/\//.test(ln))
+            let sites = code.filter((ln) => /\bchkReadable\(/.test(ln)).map((ln) => ln.trim())
+            assert.deepStrictEqual(sites, [
+                'if (chkReadable(v) !== \'\') {',
+                'if (chkReadable(opt) !== \'\') {',
+                'if (chkReadable(option) !== \'\') {',
+                'emitError(mode, chkReadable(data) === \'\' ? data : null, msg)',
+                'if (chkReadable(data, { ownKeys: isobj(data), elements: \'first\' }) !== \'\') {',
+                'else if (chkReadable(id) !== \'\') {',
+                'if (chkReadable(pk) !== \'\') {',
+                'if (chkReadable(returnList) !== \'\') {',
+            ])
         })
-
-        it('reads [0] of a one-element array exactly once, and no other element [rule 4: the only exception, same as isearr]', function() {
-            let n0 = 0
-            let n1 = 0
-            let cnt0 = () => {
-                n0++
-                return 1
-            }
-            let cnt1 = () => {
-                n1++
-                return 1
-            }
-            let a = [0]
-            Object.defineProperty(a, '0', { get: cnt0, enumerable: true })
-            probeReadable(a)
-            assert.strict.equal(n0, 1)
-            let b = [0, 0]
-            Object.defineProperty(b, '0', { get: cnt0, enumerable: true })
-            Object.defineProperty(b, '1', { get: cnt1, enumerable: true })
-            probeReadable(b)
-            assert.strict.equal(n0, 1, 'elements of a longer array are not read by the probe')
-            assert.strict.equal(n1, 0)
+        it('chkOptReadable is called at exactly the 5 opt sites and chkDataReadable at exactly the 4 data sites [rule 1]', function() {
+            let code = fs.readFileSync(`${dirSrc}/WOrmLevel.mjs`, 'utf8').split('\n').filter((ln) => !/^\s*\/\//.test(ln)).map((ln) => ln.trim())
+            assert.deepStrictEqual(code.filter((ln) => /^chkOptReadable\(/.test(ln)), [
+                'chkOptReadable(\'url\', url)',
+                'chkOptReadable(\'db\', db)',
+                'chkOptReadable(\'cl\', cl)',
+                'chkOptReadable(\'useCache\', useCache)',
+                'chkOptReadable(\'autoGenPk\', autoGenPk)',
+            ])
+            assert.deepStrictEqual(code.filter((ln) => /^chkDataReadable\(/.test(ln)), ['chkDataReadable(data)', 'chkDataReadable(data)', 'chkDataReadable(data)', 'chkDataReadable(data)'])
         })
     })
 
@@ -177,12 +122,12 @@ describe('probe-readable', function() {
             await wo.insertBulk(seed())
         })
 
-        for (let h of hostiles.filter((v) => v.tag)) {
-            it(`${h.key} as pk: rejects with the original message, one error event before reject, no change, database unchanged [rules 1, 2]`, async function() {
+        for (let h of hostiles) {
+            it(`${h.key} as pk: rejects with the fixed message, one error event before reject, no change, database unchanged [rules 1, 2]`, async function() {
                 let snapBefore = await snap(wo)
                 let out = await ob.run(() => wo.selectByPk(h.mk()))
                 assert.strict.equal(out.ok, false, 'selectByPk should reject')
-                chkMsg(out.err, h.msg)
+                chkRd(out.err, 'pk', h)
                 let evErr = out.evs.filter((v) => v.t === 'error')
                 assert.strict.equal(evErr.length, 1, 'selectByPk should emit error exactly once')
                 assert.strict.equal(out.nAtSettle, 1, 'selectByPk should emit error before reject')
@@ -195,12 +140,13 @@ describe('probe-readable', function() {
             })
         }
 
-        //可讀而型別不符(含僅在列鍵等陷阱拋錯者: 型別標籤可讀, 同修前之isestr僅讀標籤)者回null, 不發事件 [rule 3]
+        //可讀而型別不符(含僅在列鍵等陷阱拋錯者: 型別標籤可讀)者回null, 不發事件 [rule 3]
         let wrongTypes = [
             { key: 'number', mk: () => 123 },
             { key: 'null', mk: () => null },
             { key: 'undefined', mk: () => undefined },
             { key: 'empty string', mk: () => '' },
+            { key: 'String wrapper', mk: () => new String('seed1') }, // eslint-disable-line no-new-wrappers
             { key: 'plain object', mk: () => ({ id: 'seed1' }) },
             { key: 'array', mk: () => ['seed1'] },
             { key: 'Proxy whose ownKeys throws (tag readable)', mk: proxyOwnKeysThrows },
@@ -226,20 +172,20 @@ describe('probe-readable', function() {
             await wo.insertBulk(seed())
         })
 
-        for (let h of hostiles.filter((v) => v.tag)) {
-            it(`${h.key} as returnList: rejects with the original message, one error event before reject (data is the caller's input), no change, database unchanged [rules 1, 2]`, async function() {
+        for (let h of hostiles) {
+            it(`${h.key} as returnList: rejects with the fixed message, one error event before reject (data is null: entry-stage rejection, A4), no change, database unchanged [rules 1, 2]`, async function() {
                 let snapBefore = await snap(wo)
                 let d = [{ id: 'rl-bad', a: 1 }]
                 let out = await ob.run(() => wo.insert(d, { returnList: h.mk() }))
                 assert.strict.equal(out.ok, false, 'insert should reject')
-                chkMsg(out.err, h.msg)
+                chkRd(out.err, 'option.returnList', h)
                 let evErr = out.evs.filter((v) => v.t === 'error')
                 assert.strict.equal(evErr.length, 1, 'insert should emit error exactly once')
                 assert.strict.equal(out.nAtSettle, 1, 'insert should emit error before reject')
                 assert.strict.equal(evErr[0].settledAtEmit, false)
                 assert.strict.equal(evErr[0].mode, 'insert')
                 assert.strict.equal(evErr[0].err, out.err.message)
-                assert.strict.ok(evErr[0].data === d, 'error event data should be the caller input (the copy is made after the option is read)')
+                assert.strict.ok(evErr[0].data === null, 'error event data should be null (entry-stage rejection: the unreadable value is not handed to subscribers, A4)')
                 assert.strict.equal(out.evs.filter((v) => v.t === 'change').length, 0)
                 assert.deepStrictEqual(await snap(wo), snapBefore)
             })
@@ -251,6 +197,7 @@ describe('probe-readable', function() {
             { key: 'number', mk: () => 1 },
             { key: 'plain object', mk: () => ({}) },
             { key: 'array', mk: () => [] },
+            { key: 'Boolean wrapper', mk: () => new Boolean(true) }, // eslint-disable-line no-new-wrappers
             { key: 'Proxy whose ownKeys throws (tag readable)', mk: proxyOwnKeysThrows },
             { key: 'Proxy whose getOwnPropertyDescriptor throws (tag readable)', mk: proxyGopdThrows },
             { key: 'Proxy whose has trap throws (known boundary: tag readable, formerly rejected through lodash isBoolean; see rulebook R-PROBE-01)', mk: proxyHasThrows },
@@ -272,8 +219,8 @@ describe('probe-readable', function() {
         let base = (name) => ({ url: `${url}/ctor-${name}-${n++}`, db: 'worm', cl: 'c' })
 
         for (let key of ['url', 'db', 'cl', 'useCache', 'autoGenPk']) {
-            for (let h of hostiles.filter((v) => v.tag)) {
-                it(`opt.${key} = ${h.key}: throws the original error synchronously${key === 'url' ? '' : ', creates no folder'} [rules 1, 2]`, function() {
+            for (let h of hostiles) {
+                it(`opt.${key} = ${h.key}: throws the fixed message synchronously${key === 'url' ? '' : ', creates no folder'} [rules 1, 2]`, function() {
                     let opt = base(key)
                     opt[key] = h.mk()
                     let wo = null
@@ -288,7 +235,7 @@ describe('probe-readable', function() {
                         opened.push(wo)
                     }
                     assert.strict.ok(thrown !== null, 'constructor should throw')
-                    chkMsg(thrown, h.msg)
+                    chkRd(thrown, `opt.${key}`, h)
                     if (key !== 'url') {
                         assert.strict.equal(fs.existsSync(opt.url), false, 'no database folder should be created')
                     }
@@ -316,15 +263,95 @@ describe('probe-readable', function() {
             await wo.insert({ id: 'x1', a: 1 })
             assert.deepStrictEqual(await wo.select(), [{ id: 'x1', a: 1 }])
         })
-        it('Proxy whose ownKeys throws as useCache/autoGenPk/db/cl (tag readable): constructs [rule 3]', async function() {
+        it('Proxy whose ownKeys throws as useCache/autoGenPk (tag readable): constructs [rule 3]', async function() {
             let wo = mk('wrong-proxy', { useCache: proxyOwnKeysThrows(), autoGenPk: proxyOwnKeysThrows() })
             await wo.insert({ id: 'x1', a: 1 })
             assert.deepStrictEqual(await wo.select(), [{ id: 'x1', a: 1 }])
         })
+        it('opt itself unreadable (revoked Proxy): throws the fixed container message invalid opt (A1, no longer the original error from reading opt)', function() {
+            assert.strict.throws(() => WOrm(proxyRevoked()), (err) => err.message === 'invalid opt: must be a readable value')
+        })
     })
 
-    //透明Proxy為可讀: 寫入方法照常處理(探針不得多拒收) [rules 1, 3]
-    describe('readable Proxy data is not rejected by the probe', function() {
+    //data站點(判斷函數iseobj、isearr回false之分支): 不可讀者走原失敗通道, 訊息為固定詞彙invalid data: must be a readable value(規則1、2); 可讀而型別不符者輸入無效早退(規則3)
+    describe('data site (4 write entries): unreadable data rejects with the fixed message, readable wrong-typed data is invalid input', function() {
+        let entries = [
+            { fn: 'insert', early: { n: 0, nInserted: 0, ok: 1 } },
+            { fn: 'insertBulk', early: { n: 0, nInserted: 0, ok: 1 } },
+            { fn: 'save', early: [] },
+            { fn: 'del', early: [] },
+        ]
+        let unreadables = [
+            { key: 'revoked Proxy', mk: proxyRevoked },
+            { key: 'Proxy whose toStringTag read throws', mk: proxyTagThrows },
+            { key: 'Proxy whose ownKeys throws', mk: proxyOwnKeysThrows },
+            { key: 'Proxy whose getOwnPropertyDescriptor throws', mk: proxyGopdThrows },
+            { key: 'Proxy whose getPrototypeOf throws', mk: proxyProtoThrows },
+            { key: 'object whose prototype is a Proxy whose ownKeys throws', mk: protoChainOwnKeysThrows },
+            { key: 'one-element array whose [0] getter throws (read by the caller inside try)', mk: arr1Getter },
+            { key: 'array Proxy whose length read throws', mk: arrLenThrows },
+            { key: 'revoked array Proxy', mk: arrRevoked },
+        ]
+        let readableWrong = [
+            { key: 'number 5', mk: () => 5 },
+            { key: 'String wrapper', mk: () => new String('a') }, // eslint-disable-line no-new-wrappers
+            { key: 'string', mk: () => 'abc' },
+            { key: 'null', mk: () => null },
+            { key: 'undefined', mk: () => undefined },
+            { key: 'empty array', mk: () => [] },
+            { key: 'empty object', mk: () => ({}) },
+            { key: 'Proxy with only Symbol keys whose getOwnPropertyDescriptor throws (for...in ignores Symbol keys)', mk: symbolOnlyGopdThrows },
+
+            //標籤非[object Object]者不列鍵(iseobj之for...in唯標籤為Object時讀鍵): ownKeys陷阱拋錯之空陣列Proxy為輸入無效而非不可讀(同本地探針時之範圍), 大型二進位不配置鍵
+            { key: 'empty array Proxy whose ownKeys throws (array tag: keys are never listed)', mk: proxyEmptyArrOwnKeysThrows },
+            { key: 'Buffer', mk: () => Buffer.alloc(8) },
+            { key: 'Uint8Array', mk: () => new Uint8Array(8) },
+            { key: 'Date', mk: () => new Date(0) },
+            { key: 'Map', mk: () => new Map([[1, 2]]) },
+        ]
+        for (let e of entries) {
+            describe(e.fn, function() {
+                let wo = null
+                let ob = null
+                before(async function() {
+                    wo = mk(`data-${e.fn}`)
+                    ob = mkObserver(wo)
+                    await wo.insertBulk(seed())
+                })
+                for (let u of unreadables) {
+                    it(`${u.key}: rejects with the fixed message, one error event before reject, no change, database unchanged [rules 1, 2]`, async function() {
+                        let snapBefore = await snap(wo)
+                        let d = u.mk()
+                        let out = await ob.run(() => wo[e.fn](d))
+                        assert.strict.equal(out.ok, false, `${e.fn} should reject`)
+                        assert.strict.equal(out.err.message, rdMsg('data'))
+                        assert.strict.ok(!/boom|revoked/i.test(out.err.message), 'the original exception text must not be echoed')
+                        let evErr = out.evs.filter((v) => v.t === 'error')
+                        assert.strict.equal(evErr.length, 1)
+                        assert.strict.equal(out.nAtSettle, 1)
+                        assert.strict.equal(evErr[0].settledAtEmit, false)
+                        assert.strict.equal(evErr[0].mode, e.fn)
+                        assert.strict.equal(evErr[0].err, rdMsg('data'))
+                        assert.strict.ok(evErr[0].data === null, 'error event data is null (entry-stage rejection: the unreadable value is not handed to subscribers, A4)')
+                        assert.strict.equal(out.evs.filter((v) => v.t === 'change').length, 0)
+                        assert.deepStrictEqual(await snap(wo), snapBefore)
+                        assert.deepStrictEqual(await wo.selectByPk('seed1'), { id: 'seed1', a: 1 }, 'following call should work (queue not stuck)')
+                    })
+                }
+                for (let r of readableWrong) {
+                    it(`${r.key}: readable but invalid input, early return ${JSON.stringify(e.early)}, no events [rule 3]`, async function() {
+                        let out = await ob.run(() => wo[e.fn](r.mk()))
+                        assert.strict.equal(out.ok, true)
+                        assert.deepStrictEqual(out.val, e.early)
+                        assert.strict.equal(out.evs.length, 0)
+                    })
+                }
+            })
+        }
+    })
+
+    //透明Proxy為可讀: 寫入方法照常處理(chkReadable不得多拒收) [rules 1, 3]
+    describe('readable Proxy data is not rejected', function() {
         let cases = [
             { fn: 'insert', call: (wo) => wo.insert(new Proxy({ id: 'p1', a: 1 }, {})), val: { n: 1, nInserted: 1, ok: 1 }, changes: ['insert'] },
             { fn: 'insertBulk', call: (wo) => wo.insertBulk(new Proxy([{ id: 'p1', a: 1 }, { id: 'p2', a: 2 }], {})), val: { n: 2, nInserted: 2, ok: 1 }, changes: ['insertBulk'] },
@@ -361,7 +388,7 @@ describe('probe-readable', function() {
         })
     })
 
-    //有效輸入不探針(規則4): 判斷函數回true者之讀取次數同修前(判定一次＋cloneDeep), 探針不得多讀一次(有狀態之存取器不被多執行)
+    //有效輸入不探測(規則4): 判斷函數回true者之讀取次數同修前(判定一次＋cloneDeep), 不得多讀一次(有狀態之存取器不被多執行)
     describe('valid data is not probed (no extra read)', function() {
         let mkCounting = (id) => {
             let c = { n: 0 }
@@ -388,7 +415,39 @@ describe('probe-readable', function() {
         }
     })
 
-    //id經原型存取器讀出(規則5): cloneDeep保留原型, 類別實例原型上之id存取器於複本上仍執行呼叫端之程式, 其回傳不可讀之值者走錯誤路徑(原訊息), 不被當成未帶id
+    //有效之物件Proxy: 其ownKeys陷阱之呼叫次數同iseobj + cloneDeep(修前基準), 檢測不得多列一次鍵; 標籤非Object之無效輸入(空陣列Proxy)之ownKeys陷阱呼叫次數為0
+    describe('valid object Proxy data: ownKeys trap is called as often as iseobj + cloneDeep; invalid array-tag Proxy never lists keys', function() {
+        let mkCountProxy = (target) => {
+            let c = { n: 0 }
+            let p = new Proxy(target, {
+                ownKeys(t) {
+                    c.n++
+                    return Reflect.ownKeys(t)
+                },
+            })
+            return { p, c }
+        }
+        let base = mkCountProxy({ id: 'b0', a: 1 })
+        iseobj(base.p)
+        cloneDeep(base.p)
+        for (let fn of ['insert', 'insertBulk', 'save', 'del']) {
+            it(`${fn}: valid object Proxy data lists keys exactly as often as iseobj + cloneDeep (${base.c.n}) [rule 4]`, async function() {
+                let wo = mk(`okeys-${fn}`)
+                let t = mkCountProxy({ id: `o-${fn}`, a: 1 })
+                await wo[fn](t.p)
+                assert.strict.equal(t.c.n, base.c.n)
+            })
+            it(`${fn}: invalid empty array Proxy: its ownKeys trap is never called (the array tag does not list keys) [rule 3]`, async function() {
+                let wo = mk(`okeys-empty-${fn}`)
+                let t = mkCountProxy([])
+                await wo[fn](t.p)
+                assert.strict.equal(t.c.n, 0)
+            })
+        }
+    })
+
+    //id經原型存取器讀出(規則5): cloneDeep保留原型, 類別實例原型上之id存取器於複本上仍執行呼叫端之程式, 其回傳標籤不可讀之值者走錯誤路徑(固定詞彙invalid data: must be a readable value, error事件之data為null), 不被當成未帶id而補值;
+    //其回傳可讀而非字串者依主鍵規則(R-PKGIVEN-01)拒絕, 見unit-pk-given
     describe('id read through a prototype accessor (procPk site)', function() {
         let mkInst = (mkId) => {
             class P {
@@ -404,15 +463,15 @@ describe('probe-readable', function() {
         }
         for (let apk of [true, false]) {
             for (let fn of ['insert', 'insertBulk', 'save']) {
-                for (let h of hostiles.filter((v) => v.tag)) {
-                    it(`${fn} (autoGenPk ${apk}): prototype getter id returns ${h.key}: rejects with the original message, one error event before reject, no change, database unchanged [rules 1, 2, 5]`, async function() {
+                for (let h of hostiles) {
+                    it(`${fn} (autoGenPk ${apk}): prototype getter id returns ${h.key}: rejects the whole batch with the fixed message, one error event before reject, no change, database unchanged [rules 1, 2, 5]`, async function() {
                         let wo = mk(`pid-${fn}-${apk}-${h.key.replace(/\W+/g, '_')}`, { autoGenPk: apk })
                         let ob = mkObserver(wo)
                         await wo.insertBulk(seed())
                         let snapBefore = await snap(wo)
                         let out = await ob.run(() => wo[fn](mkInst(h.mk)))
                         assert.strict.equal(out.ok, false, `${fn} should reject`)
-                        chkMsg(out.err, h.msg)
+                        chkRd(out.err, 'data', h)
                         let evErr = out.evs.filter((v) => v.t === 'error')
                         assert.strict.equal(evErr.length, 1, `${fn} should emit error exactly once`)
                         assert.strict.equal(out.nAtSettle, 1, `${fn} should emit error before reject`)
@@ -425,11 +484,12 @@ describe('probe-readable', function() {
                 }
             }
         }
-        it('control: a prototype getter id returning a readable non-string is treated as no id (autoGenPk true: fails at assignment, same as before)', async function() {
+        it('control: a prototype getter id returning a readable non-string is not unreadable: it is rejected as not a string, not replaced (see unit-pk-given)', async function() {
             let wo = mk('pid-control')
             let ob = mkObserver(wo)
             let out = await ob.run(() => wo.insert(mkInst(() => 123)))
             assert.strict.equal(out.ok, false)
+            assert.strict.equal(out.err.message, 'invalid id: not a string at [data[0].id]')
             assert.strict.equal(out.evs.filter((v) => v.t === 'error').length, 1)
         })
     })

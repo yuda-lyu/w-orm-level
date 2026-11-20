@@ -83,9 +83,8 @@ describe('diaglog: 單一出口掃描(規則①, D1單一實作)', function() {
     let reOut = [/\bconsole\b/, /\bstdout\b/, /\bstderr\b/, /\bemitWarning\b/, /\brequire\b/, /\bimport\s*\(/]
     let reEnv = [/\bprocess\b/, /\bglobalThis\b/, /\bglobal\b/]
 
-    //probeReadable.mjs為呼叫端給的值之可讀性探針(帳本R-PROBE-01), 非診斷實作; 其與其餘src檔同受下方「不得出現console、process等」之掃描涵蓋
-    it('src只有WOrmLevel.mjs、getStoragePaths.mjs與probeReadable.mjs(可讀性探針, 帳本R-PROBE-01): 無自寫之getDiag.mjs(遮罩、摘要與出口一律用wsemi之共用實作)', function() {
-        assert.deepStrictEqual(files.sort(), ['WOrmLevel.mjs', 'getStoragePaths.mjs', 'probeReadable.mjs'])
+    it('src只有WOrmLevel.mjs與getStoragePaths.mjs: 無自寫之getDiag.mjs(遮罩、摘要與出口一律用wsemi之共用實作)', function() {
+        assert.deepStrictEqual(files.sort(), ['WOrmLevel.mjs', 'getStoragePaths.mjs'])
     })
 
     it('WOrmLevel.mjs之診斷出口來自wsemi/src/getDiag.mjs與getDiagSecrets.mjs, 不另寫等價實作', function() {
@@ -164,21 +163,22 @@ describe('diaglog: 站點盤點(R-DIAG-01站點全集, 原始碼鎖定; 行為�
         assert.deepStrictEqual(m, { 'new Error(msg)': 1, 'pf.err': 2, 'res': 7 })
     })
 
-    it('throw之全集: 固定詞彙mkOwnErr(7)、建構期良構檢核之固定訊息(1)、isoFind之固定訊息(1)、外來值經diag.err(2: Level建構與close)', function() {
-        let ts = (code.match(/\bthrow\s+(?:new Error\(|mkOwnErr\(|diag\.err\()/g) || []).map((s) => s.replace(/\s+/g, ' '))
+    it('throw之全集: 固定詞彙mkOwnErr(7)與mkInErr(11)、建構期固定訊息(5)、isoFind之固定訊息(1含於其中)、外來值經diag.err(2: Level建構與close)', function() {
+        let ts = (code.match(/\bthrow\s+(?:new Error\(|mkOwnErr\(|mkInErr\(|diag\.err\()/g) || []).map((s) => s.replace(/\s+/g, ' '))
         let m = {}
         for (let t of ts) {
             m[t] = (m[t] || 0) + 1
         }
         assert.deepStrictEqual(m, {
-            'throw mkOwnErr(': 7,
-            'throw new Error(': 2, //chkOptStr(良構檢核, 訊息為固定詞彙invalid opt.<名>: <原因>)與isoFind(invalid find: Date year...)
+            'throw mkOwnErr(': 7, //waitOpen、procPk(未帶主鍵)、procWellFormed、chkDataDate、insertBulk主鍵衝突、save逐筆(2)
+            'throw mkInErr(': 11, //呼叫端給的值不可讀(固定詞彙invalid <名稱>: must be a readable value, error事件之data為null): getOpt(2)、copyData、guardRead、chkDataReadable(2)、procPk(3: id讀取拋錯、setter拋錯、id不可讀)、selectByPk之pk、insert之option.returnList
+            'throw new Error(': 5, //chkOptStr(良構檢核, 訊息為固定詞彙invalid opt.<名>: <原因>)、chkOptReadable(invalid opt.<名>: must be a readable value)、getOptVal(2: invalid opt與invalid opt.<名>)與isoFind(invalid find: Date year...)
             'throw diag.err(': 2,
         })
-        assert.strictEqual(count(/\bthrow\b/g), 11) //無其他throw(如throw err原樣重拋)
+        assert.strictEqual(count(/\bthrow\b/g), 27) //上列25(7+11+5+2)＋throw err原樣重拋2(guardRead之本套件自身之錯誤、procPk之非物件列之原生TypeError), 無其他throw
 
-        //new Error之全集(5): mkOwnErr內1、chkOptStr 1、isoFind 1、procClosed 1、selectCore之can not select 1, 皆為固定詞彙(不經遮罩)
-        assert.strictEqual(count(/\bnew Error\(/g), 5)
+        //new Error之全集(8): mkOwnErr內1、chkOptStr 1、chkOptReadable 1、getOptVal 2、isoFind 1、procClosed 1、selectCore之can not select 1, 皆為固定詞彙(不經遮罩)
+        assert.strictEqual(count(/\bnew Error\(/g), 8)
         assert.strictEqual(count(/\bnew Error\(msg\)/g), 2) //mkOwnErr內與procClosed
     })
 

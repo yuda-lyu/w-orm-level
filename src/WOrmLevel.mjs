@@ -10,6 +10,7 @@ import isEqual from 'lodash-es/isEqual.js'
 import cloneDeep from 'lodash-es/cloneDeep.js'
 import isestr from 'wsemi/src/isestr.mjs'
 import isarr from 'wsemi/src/isarr.mjs'
+import isobj from 'wsemi/src/isobj.mjs'
 import isearr from 'wsemi/src/isearr.mjs'
 import iseobj from 'wsemi/src/iseobj.mjs'
 import isbol from 'wsemi/src/isbol.mjs'
@@ -20,10 +21,10 @@ import waitFun from 'wsemi/src/waitFun.mjs'
 import cvOrmFind from 'wsemi/src/cvOrmFind.mjs'
 import chkOrmStr from 'wsemi/src/chkOrmStr.mjs'
 import chkOrmData from 'wsemi/src/chkOrmData.mjs'
+import chkReadable from 'wsemi/src/chkReadable.mjs'
 import getDiag from 'wsemi/src/getDiag.mjs'
 import getDiagSecrets from 'wsemi/src/getDiagSecrets.mjs'
 import getStoragePaths from './getStoragePaths.mjs'
-import { probeTag, probeReadable } from './probeReadable.mjs'
 
 
 /**
@@ -44,8 +45,9 @@ import { probeTag, probeReadable } from './probeReadable.mjs'
  * data為本次操作之輸入數據，無輸入數據者為null。
  * err為錯誤訊息字串，內容與正規管道所送出者一致。
  * 整批性錯誤於reject之前發出；逐筆失敗於該筆結果定案後發出，每筆一次。
- * insert、insertBulk、save與del因輸入本身導致之失敗(如原型為null之Date使複製拋錯、存取器拋錯)亦屬整批性錯誤，同樣於reject之前恰發出一次、不發出change事件、資料庫不變；
- * 拋錯於複製建立之前者，data為呼叫端傳入之原值，其後者為複製；err為拋出者之原訊息(呼叫端自行拋出之值或訊息原樣通過，無法轉為字串者以固定訊息unknown error取代)，本套件不另行回顯數據內容。
+ * insert、insertBulk、save與del因呼叫端給的值不可讀(讀取即拋錯，如已撤銷之Proxy、陷阱或存取器拋錯、複製階段之巢狀不可讀值、原型為null之Date使複製拋錯)導致之失敗亦屬整批性錯誤，同樣於reject之前恰發出一次、不發出change事件、資料庫不變；
+ * 此類拒絕發生於入口階段(讀取option或data、複製data)，data固定為null(不把不可讀之值交給訂閱函數)，err為固定詞彙invalid <名稱>: must be a readable value(不含拋出者之原訊息與值，詳見下方呼叫端給的值之可讀性)；
+ * 其餘整批性錯誤(如主鍵衝突、Date範圍外、主鍵檢核不合格)data為本次操作之數據複本，err中後端或使用端回呼拋出之外來值依下列診斷規則處置。
  * 註: 逐筆失敗時整批仍resolve，故收到本事件不表示該次呼叫失敗；正常結果(如查無數據、主鍵未命中、全數已存在)不發出本事件。
  *
  * 註: 本套件之主鍵欄位固定為id，尚未支援指定其他欄位為主鍵。
@@ -65,6 +67,24 @@ import { probeTag, probeReadable } from './probeReadable.mjs'
  * 原因為string contains lone surrogate、string contains NUL(僅主鍵)、not a string或string is empty(del之id未給、非字串或空字串)。
  * U+FFFD本身與成對代理(emoji等)為良構，照常接受。既有資料不遷移，檢出與清除法見README。
  *
+ * 主鍵(id)之未帶與給了(w-orm系列規則，帳本R-PKGIVEN-01)：只有id為undefined、null、空字串(含鍵不存在)視為未帶，autoGenPk為true時自動產生，
+ * 為false時整批reject(save亦然，不降為逐筆)，訊息為can not <入口> by data[k] without valid id when autoGenPk is false；其餘一律視為給了，
+ * 給了而非字串(數字、布林、物件、陣列、String包裝物件、Symbol、BigInt等)者不補值亦不替換為新產生之主鍵(主鍵為資料之身分，給了錯值卻換成新主鍵寫入，事後無從對應)，
+ * 依各入口既有之失敗通道拒絕，通道不隨autoGenPk改變，訊息為固定詞彙invalid id: not a string at [data[k].id](不回顯值)：
+ * insert與insertBulk整批reject(error事件於reject之前恰一次、不發change、資料庫不變)，save與del該筆ok為0並附err，selectByPk回null。
+ *
+ * 呼叫端給的值之可讀性(w-orm系列規則，帳本R-PROBE-01，用wsemi之chkReadable)：呼叫端給的資料(data)、選項(opt.url、opt.db、opt.cl、opt.useCache、opt.autoGenPk、option.returnList)、
+ * selectByPk之pk與經類別實例原型上之存取器讀出之id，若為讀取即拋錯之值(已撤銷之Proxy、Symbol.toStringTag或陷阱拋錯者、單元素陣列之[0]存取器拋錯者等)，
+ * 走各入口既有之失敗通道(寫入入口與selectByPk為error事件恰一次後reject、資料庫不變，建構為同步throw)，訊息為固定詞彙invalid <名稱>: must be a readable value，
+ * 不含拋出者之原訊息與值，亦不轉出呼叫端物件(存取器、Proxy陷阱、巢狀值)拋出之文字；可讀而型別不符者行為不變(輸入無效早退、查無數據、選項採忽略)。名稱依拒絕之處：
+ * 1. 選項容器本身不可讀(opt或option為已撤銷之Proxy、get陷阱或Symbol.toStringTag拋錯者，讀其成員即拋錯)：invalid opt(建構)、invalid option(insert與save之option)；
+ * 2. 容器可讀而其成員之讀取拋錯(拋錯之存取器，或僅對該鍵拋錯之get陷阱)：invalid opt.<名>(建構)、invalid option.returnList、invalid option.autoInsert；opt.<名>與option.returnList之值本身不可讀者名稱同(option.autoInsert只取真值，不檢其值之可讀性)；
+ * 3. 資料不可讀(含複製階段之巢狀不可讀值：資料內之id、列之成員、陣列其後之元素、各欄為已撤銷之Proxy或拋錯之存取器、複本原型上拋錯之存取器、原型為null之Date、過深之巢狀等；
+ *    複製、補主鍵之指派與良構檢核讀取複本時拋錯者不分頂層與巢狀一律同詞彙)：invalid data；
+ * 4. selectByPk之pk不可讀：invalid pk(可讀而非字串者回null)。
+ * 入口階段之拒絕(上列1~3)，error事件之data為null；opt.logDetail與opt.funLog由wsemi之getDiag處置(診斷出口永不失敗，不經上述)。
+ * 已關閉(close後)之實例於入口先拒絕，error事件之data為呼叫端傳入之原值，惟其型別標籤不可讀者為null。
+ *
  * 診斷輸出與遮罩(w-orm系列規則，選項名稱與語意同w-serv-orm；遮罩、摘要與出口皆用wsemi之共用實作getDiag，規則見wsemi之getDiag說明與規格〈診斷輸出與遮罩〉)：
  * 本套件唯一會自行輸出之情形，是change或error事件之訂閱函數拋錯被攔下時(攔下後不影響本次操作之回傳與事件發出)，所有輸出皆經單一出口(wsemi之getDiag)，其餘情形不輸出：
  * 1. 預設只輸出固定標籤與不含個資之摘要，如console.log('change handler threw', { mode: 'insert', errType: 'Error' })與console.log('error handler threw', { mode, errType, errCode })，
@@ -83,12 +103,12 @@ import { probeTag, probeReadable } from './probeReadable.mjs'
  * 註: 各操作reject、逐筆err欄位與error事件內之固定詞彙訊息文字(如can not insertBulk by existed id[...])屬回傳契約，不在診斷輸出之範圍，訂閱函數自行轉拋時該文字會出現在其拋出值中(位址名稱於logDetail與funLog之細節遮罩)。
  *
  * @class
- * @param {Object} [opt={}] 輸入設定物件，預設{}
+ * @param {Object} [opt={}] 輸入設定物件，預設{}；讀取即拋錯者(opt本身不可讀，或成員為拋錯之存取器)建構時同步throw(invalid opt: must be a readable value、invalid opt.<名>: must be a readable value)
  * @param {String} [opt.url='./_db'] 輸入資料庫用資料夾字串，預設'./_db'；含孤立代理字元者建構時throw
  * @param {String} [opt.db='worm'] 輸入使用資料庫名稱字串，預設'worm'；含孤立代理字元者建構時throw
  * @param {String} [opt.cl='test'] 輸入使用資料表名稱字串，預設'test'；含孤立代理字元者建構時throw
  * @param {Boolean} [opt.useCache=false] 輸入是否使用select快取，適用於單程序操作，預設false
- * @param {Boolean} [opt.autoGenPk=true] 輸入insert、insertBulk與save於數據未帶有效主鍵(本套件為id欄位)時是否自動產生主鍵值，預設true；給false代表主鍵改由呼叫端自備，套件不產生亦不檢查其唯一性與格式，未帶有效主鍵者將reject
+ * @param {Boolean} [opt.autoGenPk=true] 輸入insert、insertBulk與save於數據未帶有效主鍵(本套件為id欄位)時是否自動產生主鍵值，預設true；給false代表主鍵改由呼叫端自備，套件不產生亦不檢查其唯一性，未帶主鍵(id為undefined、null、空字串或鍵不存在)者將reject；給了而非字串者不論此選項皆拒絕(見上述主鍵之未帶與給了)
  * @param {Boolean} [opt.logDetail=false] 輸入診斷輸出是否改為含錯誤原文之遮罩後細節，預設false(只輸出標籤與不含個資之摘要)，見上述診斷輸出
  * @param {Function} [opt.funLog] 輸入使用端提供之紀錄函式(label, safe, detail)，預設無；給予時診斷輸出只交給它而不寫console，見上述診斷輸出
  * @returns {Object} 回傳操作資料庫物件，各事件功能詳見說明
@@ -107,13 +127,34 @@ function WOrmLevel(opt = {}) {
         }
     }
 
-    //建構層之opt各值皆為呼叫端給的值: wsemi 1.9.69起判斷函數對讀取即拋錯之值不拋錯而回false, 故判斷為假時先經probeTag分辨(帳本R-PROBE-01),
-    //不可讀者(已撤銷之Proxy、Symbol.toStringTag拋錯者)同修前於建構時同步throw原錯誤; 可讀而型別不符者仍採忽略(本套件慣例)
+    //chkOptReadable, 建構層之opt各值皆為呼叫端給的值: wsemi 1.9.69起判斷函數對讀取即拋錯之值不拋錯而回false, 故判斷為假(非預期型別)時以wsemi之chkReadable分辨
+    //「不可讀」與「可讀而型別不符」(帳本R-PROBE-01): 不可讀者(已撤銷之Proxy、Symbol.toStringTag拋錯者)於建構時同步throw固定詞彙(不含原例外文字), 可讀而型別不符者仍採忽略(本套件慣例)
+    let chkOptReadable = (name, v) => {
+        if (chkReadable(v) !== '') {
+            throw new Error(`invalid opt.${name}: must be a readable value`)
+        }
+    }
+
+    //getOptVal, 取opt之成員值(帳本R-PROBE-01; w-orm系列對齊口徑A1、A2), 讀取拋錯者一律轉固定詞彙(不轉出拋出者之文字), 建構時同步throw:
+    //opt本身不可讀(已撤銷之Proxy、get陷阱或Symbol.toStringTag拋錯者, 以chkReadable判定)為invalid opt: must be a readable value;
+    //容器可讀而該成員為拋錯之存取器(或僅對該鍵拋錯之get陷阱, chkReadable不呼叫存取器)為invalid opt.<名>: must be a readable value
+    //註: opt.logDetail與opt.funLog由wsemi之getDiag自行讀取處置(診斷出口永不失敗), 不經本函數
+    let getOptVal = (name) => {
+        try {
+            return get(opt, name)
+        }
+        catch (err) {
+            if (chkReadable(opt) !== '') {
+                throw new Error('invalid opt: must be a readable value')
+            }
+            throw new Error(`invalid opt.${name}: must be a readable value`)
+        }
+    }
 
     //url
-    let url = get(opt, 'url')
+    let url = getOptVal('url')
     if (!isestr(url)) {
-        probeTag(url)
+        chkOptReadable('url', url)
         url = './_db'
     }
     else {
@@ -121,9 +162,9 @@ function WOrmLevel(opt = {}) {
     }
 
     //db
-    let db = get(opt, 'db')
+    let db = getOptVal('db')
     if (!isestr(db)) {
-        probeTag(db)
+        chkOptReadable('db', db)
         db = 'worm'
     }
     else {
@@ -131,9 +172,9 @@ function WOrmLevel(opt = {}) {
     }
 
     //cl
-    let cl = get(opt, 'cl')
+    let cl = getOptVal('cl')
     if (!isestr(cl)) {
-        probeTag(cl)
+        chkOptReadable('cl', cl)
         cl = 'test'
     }
     else {
@@ -141,17 +182,17 @@ function WOrmLevel(opt = {}) {
     }
 
     //useCache
-    let useCache = get(opt, 'useCache')
+    let useCache = getOptVal('useCache')
     if (!isbol(useCache)) {
-        probeTag(useCache)
+        chkOptReadable('useCache', useCache)
         useCache = false
     }
 
     //autoGenPk, 主鍵由誰產生為整個資料表之政策, 故為建構層設定, 不可於各寫入函數之option逐次覆寫,
     //否則同一資料表將混入兩種來源之主鍵而難以追溯
-    let autoGenPk = get(opt, 'autoGenPk')
+    let autoGenPk = getOptVal('autoGenPk')
     if (!isbol(autoGenPk)) {
-        probeTag(autoGenPk)
+        chkOptReadable('autoGenPk', autoGenPk)
         autoGenPk = true
     }
 
@@ -173,6 +214,54 @@ function WOrmLevel(opt = {}) {
         let e = new Error(msg)
         own.add(e)
         return e
+    }
+
+    //inErrs與mkInErr, 呼叫端給的值不可讀之拒絕(w-orm系列對齊口徑A1~A4, 帳本R-PROBE-01): 固定詞彙invalid <名稱>: must be a readable value(不含拋出者之原文字與值),
+    //同為本套件自身之錯誤(own); 另記入inErrs, 令各寫入入口之catch辨識後將error事件之data改傳null(不把不可讀之值或含其之複本交給訂閱函數, A4)
+    let inErrs = new WeakSet()
+    let mkInErr = (name) => {
+        let e = mkOwnErr(`invalid ${name}: must be a readable value`)
+        inErrs.add(e)
+        return e
+    }
+
+    //getOpt, 取呼叫端給的option之成員值(A1、A2): 讀取拋錯者一律轉固定詞彙, option本身不可讀(以chkReadable判定)為invalid option: must be a readable value,
+    //容器可讀而該成員為拋錯之存取器為invalid option.<鍵>: must be a readable value; def為值為undefined時之預設(同lodash get)
+    let getOpt = (option, key, def) => {
+        try {
+            return get(option, key, def)
+        }
+        catch (err) {
+            if (chkReadable(option) !== '') {
+                throw mkInErr('option')
+            }
+            throw mkInErr(`option.${key}`)
+        }
+    }
+
+    //copyData, 以cloneDeep複製呼叫端給的data(A3): 複製階段拋錯者(巢狀不可讀值如已撤銷之Proxy或拋錯之存取器、陷阱拋錯、原型為null之Date、過深之巢狀等)
+    //一律轉固定詞彙invalid data: must be a readable value, 走與頂層不可讀相同之通道(複製處之catch不分辨頂層與巢狀、亦不轉出拋出者之文字)
+    let copyData = (data) => {
+        try {
+            return cloneDeep(data)
+        }
+        catch (err) {
+            throw mkInErr('data')
+        }
+    }
+
+    //guardRead, 執行會讀取複本內存取器之處理(複本保留原型, 原型上之存取器仍會執行呼叫端之程式): 本套件自身之錯誤(own)原樣拋出,
+    //其餘(存取器、陷阱拋出者)轉固定詞彙invalid data: must be a readable value(A2、A3)
+    let guardRead = (fn) => {
+        try {
+            return fn()
+        }
+        catch (err) {
+            if (own.has(err)) {
+                throw err
+            }
+            throw mkInErr('data')
+        }
     }
 
     //outErr, 對外錯誤值(reject、error事件之錯誤引數): 外來值經diag.err(無憑證者原物件交出, 身分不變), 固定詞彙之錯誤原樣
@@ -243,9 +332,10 @@ function WOrmLevel(opt = {}) {
     //procClosed, 各函數入口之終態守門: close()後再操作屬整批性錯誤, 立即reject令誤用當場可見
     //不可靜默回正常空值(如null或未命中), 否則[已關閉]與[查無資料]同形,
     //去重類呼叫端將把每筆判為未存在而fail-open, 整批重送下游昂貴動作
+    //error事件之data: 呼叫端給的值不可讀(chkReadable不呼叫存取器, 只讀型別標籤, 不拋錯)者傳null, 不把不可讀之值交給訂閱函數(A4); 可讀者仍為呼叫端傳入之原值
     let procClosed = (mode, data) => {
         let msg = `can not ${mode} by closed client, instance can not be used after close()`
-        emitError(mode, data, msg)
+        emitError(mode, chkReadable(data) === '' ? data : null, msg)
         return Promise.reject(new Error(msg))
     }
 
@@ -452,30 +542,65 @@ function WOrmLevel(opt = {}) {
         return own.has(err) ? msg : diag.mask(msg)
     }
 
-    //procPk,依autoGenPk處理各數據之主鍵, 供insert、insertBulk與save共用
-    //autoGenPk為true時補值; 為false時不補值, 未帶有效主鍵者屬呼叫端未履行契約, 拋出為整批性錯誤,
+    //chkDataReadable, 呼叫端給的data(判斷函數iseobj、isearr回false之分支內呼叫, 判斷為真者不呼叫, 不增加有效輸入之讀取): 以wsemi之chkReadable分辨「不可讀」與「輸入無效」(帳本R-PROBE-01),
+    //不可讀者(已撤銷之Proxy、ownKeys等陷阱拋錯、Symbol.toStringTag拋錯、陣列length或元素拋錯)走該入口之原失敗通道(置於各Core之try內: error事件恰一次後reject, 資料庫不變), 訊息為固定詞彙(不含原例外文字);
+    //可讀者回傳後照原行為(輸入無效之早退).
+    //ownKeys: 自有鍵與原型鏈(iseobj之for...in之超集), 僅標籤為[object Object]者(iseobj之for...in唯此情形讀鍵; 其餘標籤如Buffer、TypedArray、Map、Date、陣列不列鍵,
+    //否則大型二進位之無效輸入會配置與長度同量之鍵, 且標籤非Object之Proxy其ownKeys陷阱拋錯者由早退變為reject), elements first: 陣列length與[0](isearr之讀取);
+    //chkReadable不呼叫存取器, 而isearr唯一依賴元素值之情形(單元素陣列之[0])其存取器拋錯者(isearr回false)須於此自讀, 於try內攔下改報固定詞彙
+    let chkDataReadable = (data) => {
+        if (chkReadable(data, { ownKeys: isobj(data), elements: 'first' }) !== '') {
+            throw mkInErr('data')
+        }
+        try {
+            if (isarr(data) && Reflect.get(data, 'length') === 1) {
+                Reflect.get(data, 0)
+            }
+        }
+        catch (err) {
+            throw mkInErr('data')
+        }
+    }
+
+    //procPk,依autoGenPk處理各數據之主鍵, 供insert、insertBulk與save共用(帳本R-PKGIVEN-01)
+    //未帶主鍵只有三種: id為undefined、null或''(含鍵不存在), 其餘皆為給了: 給了而非字串者(數字、布林、物件、陣列、String包裝物件、Symbol、BigInt等)不補值亦不替換,
+    //原樣留給後續之主鍵檢核(getWellFormedMsg, 訊息invalid id: not a string at [data[k].id]), 因主鍵為資料之身分, 呼叫端給了錯值卻換成新id寫入, 事後無從對應;
+    //判定一律以===比對, 不得改用isestr等語意可隨wsemi版本改變之判斷函數(wsemi 1.9.69起isestr不收String包裝物件, 原寫法即因此把包裝物件靜默換成新id)
+    //未帶主鍵: autoGenPk為true時補值; 為false時不補值, 屬呼叫端未履行契約, 拋出為整批性錯誤(save亦然, 不降為逐筆),
     //且檢查於任何寫入之前完成, 故不會有部份筆數已寫入而整批失敗之情形
-    //id雖取自cloneDeep之複本, 複本保留原型, 類別實例原型上之存取器id仍會執行呼叫端之程式並可回傳不可讀之值:
-    //判斷為假時先經probeTag分辨(帳本R-PROBE-01), 不可讀者拋原錯誤, 不被當成未帶id而補值或改報固定詞彙
+    //給了之主鍵之失敗通道不隨autoGenPk改變: insert與insertBulk整批reject, save該筆ok為0(皆於其後之良構檢核)
+    //id雖取自cloneDeep之複本, 複本保留原型, 類別實例原型上之存取器id仍會執行呼叫端之程式(於本函數取一次)並可回傳不可讀之值:
+    //讀取拋錯者(存取器拋錯, 對齊口徑A2)與給了之值不可讀者(已撤銷之Proxy、Symbol.toStringTag拋錯者, 以chkReadable分辨, 帳本R-PROBE-01)皆拋固定詞彙invalid data: must be a readable value
+    //(不轉出拋出者之文字, 同複製階段之A3, error事件之data為null), 不被當成未帶id而補值; 可讀者交其後之良構檢核;
+    //補值之指派(v.id =)亦可能執行呼叫端之setter, 物件列之指派拋錯者同轉固定詞彙; 列為非物件(如字串)者之原生TypeError不屬此(既有, 見帳本已知邊界)
     let procPk = (data, fnName) => {
-        if (autoGenPk) {
-            return map(data, function(v) {
-                let id = get(v, 'id')
-                if (!isestr(id)) {
-                    probeTag(id)
+        return map(data, function(v, k) {
+            let id = null
+            try {
+                id = get(v, 'id')
+            }
+            catch (err) {
+                throw mkInErr('data')
+            }
+            if (id === undefined || id === null || id === '') {
+                if (!autoGenPk) {
+                    throw mkOwnErr(`can not ${fnName} by data[${k}] without valid id when autoGenPk is false`)
+                }
+                try {
                     v.id = genIDSeq()
                 }
-                return v
-            })
-        }
-        each(data, function(v, k) {
-            let id = get(v, 'id')
-            if (!isestr(id)) {
-                probeTag(id)
-                throw mkOwnErr(`can not ${fnName} by data[${k}] without valid id when autoGenPk is false`)
+                catch (err) {
+                    if (v !== null && (typeof v === 'object' || typeof v === 'function')) {
+                        throw mkInErr('data')
+                    }
+                    throw err
+                }
             }
+            else if (chkReadable(id) !== '') {
+                throw mkInErr('data')
+            }
+            return v
         })
-        return data
     }
 
     //chkPk, 主鍵之檢核, 回傳null(合格)或固定原因字串(不回顯值), 供寫入前(procWellFormed)、selectByPk與del共用:
@@ -640,7 +765,7 @@ function WOrmLevel(opt = {}) {
      * 註: 本套件之主鍵欄位固定為id，尚未支援指定其他欄位為主鍵
      *
      * @memberOf WOrmLevel
-     * @param {String} pk 輸入主鍵值字串，本套件之主鍵欄位為id
+     * @param {String} pk 輸入主鍵值字串，本套件之主鍵欄位為id；給了而非字串(數字、String包裝物件等)者視為主鍵值無效，回傳null；讀取即拋錯者(已撤銷之Proxy等)reject，訊息為invalid pk: must be a readable value
      * @returns {Promise} 回傳Promise，resolve回傳數據物件，若無此主鍵或主鍵值無效則回傳null，reject回傳錯誤訊息
      */
     async function selectByPkCore(pk) {
@@ -650,10 +775,12 @@ function WOrmLevel(opt = {}) {
         let res = null
         try {
 
-            //check, pk非字串者: 呼叫端給的pk不可讀(已撤銷之Proxy、Symbol.toStringTag拋錯者)走錯誤路徑(error事件恰一次後reject, 帳本R-PROBE-01),
-            //wsemi 1.9.69起isestr對其回false, 若不探針則與「型別不符」同為查無數據; 可讀而型別不符者視為查無數據
+            //check, pk非字串者(含給了而非字串之數字、String包裝物件等, 帳本R-PKGIVEN-01: 查詢入口之既有通道為回null, 不變): 呼叫端給的pk不可讀(已撤銷之Proxy、Symbol.toStringTag拋錯者)
+            //走錯誤路徑(error事件恰一次後reject, 訊息為固定詞彙, 帳本R-PROBE-01), wsemi 1.9.69起isestr對其回false, 若不以chkReadable分辨則與「型別不符」同為查無數據; 可讀而型別不符者視為查無數據
             if (!isestr(pk)) {
-                probeTag(pk)
+                if (chkReadable(pk) !== '') {
+                    throw mkInErr('pk')
+                }
                 return null
             }
 
@@ -714,8 +841,8 @@ function WOrmLevel(opt = {}) {
      * 資料庫內既有之範圍外Date字串不遷移，仍無法以Date條件正確比較，詳見README
      *
      * @memberOf WOrmLevel
-     * @param {Object|Array} data 輸入數據物件或陣列
-     * @param {Object} [option={}] 輸入設定物件，預設為{}
+     * @param {Object|Array} data 輸入數據物件或陣列；各筆主鍵id未帶者依autoGenPk補值或整批reject，給了而非字串者整批reject(訊息invalid id: not a string at [data[k].id])，詳見類別說明
+     * @param {Object} [option={}] 輸入設定物件，預設為{}；讀取即拋錯者(option本身不可讀，或成員為拋錯之存取器)整批reject(invalid option: must be a readable value、invalid option.returnList: must be a readable value)
      * @param {Boolean} [option.returnList=false] 輸入是否改回傳逐筆結果布林值，預設false。給true時回傳與輸入等長保序之陣列，各筆為{n,nInserted,ok}，nInserted為1即該筆為新增；聚合計數只回答有幾筆是新的，逐筆結果方能回答是哪幾筆，供下游僅對新資料執行昂貴動作。回傳形式由呼叫點靜態決定，共用之結果處理程式碼不可跨不同取值之呼叫點混用
      * @returns {Promise} 回傳Promise，resolve依returnList回傳插入結果：預設回傳聚合物件{n,nInserted,ok}，n為輸入筆數、nInserted為實際插入筆數；returnList為true時回傳逐筆陣列，各筆n恆為1(主鍵命中或經插入)、ok恆為1(insert之錯誤皆屬整批性而reject，不進逐筆)；reject回傳錯誤訊息
      */
@@ -726,19 +853,24 @@ function WOrmLevel(opt = {}) {
         let res = null
         try {
 
-            //returnList, 讀取呼叫端傳入之option、判定data與cloneDeep皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01)
-            let returnList = get(option, 'returnList')
+            //returnList, 讀取呼叫端傳入之option、判定data與cloneDeep皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01);
+            //option本身不可讀為invalid option: must be a readable value, 成員為拋錯之存取器為invalid option.returnList: must be a readable value(getOpt, A1、A2)
+            let returnList = getOpt(option, 'returnList')
             if (!isbol(returnList)) {
-                probeTag(returnList) //不可讀者走錯誤路徑(帳本R-PROBE-01; wsemi 1.9.69起isbol對其回false)
+
+                //不可讀者走錯誤路徑, 訊息為固定詞彙(帳本R-PROBE-01; wsemi 1.9.69起isbol對其回false); 可讀而型別不符者採忽略(預設false)
+                if (chkReadable(returnList) !== '') {
+                    throw mkInErr('option.returnList')
+                }
                 returnList = false
             }
 
             //check, 輸入無效者直接回傳, 不經catch之後之收尾且不發事件
             if (!iseobj(data) && !isearr(data)) {
 
-                //probe, 判定為假時分辨「不可讀」與「輸入無效」: 呼叫端給的data不可讀者(已撤銷之Proxy、ownKeys等陷阱拋錯、元素存取器拋錯)走錯誤路徑(帳本R-PROBE-01;
+                //probe, 判定為假時分辨「不可讀」與「輸入無效」: 呼叫端給的data不可讀者(已撤銷之Proxy、ownKeys等陷阱拋錯、元素存取器拋錯)走錯誤路徑, 訊息為固定詞彙(帳本R-PROBE-01;
                 //wsemi 1.9.69起iseobj、isearr對其回false); 判定為真者不探針(不增加讀取), 其後之cloneDeep逐一讀取, 拋錯者同走錯誤路徑
-                probeReadable(data)
+                chkDataReadable(data)
 
                 if (returnList) {
                     //輸入無效, 對齊save與del之空陣列規定
@@ -751,8 +883,8 @@ function WOrmLevel(opt = {}) {
                 }
             }
 
-            //cloneDeep, 與外部數據脫勾, 其拋錯者(如原型為null之Date)亦走同一錯誤路徑(error事件恰一次後reject)
-            data = cloneDeep(data)
+            //copyData(cloneDeep), 與外部數據脫勾, 其拋錯者(巢狀不可讀值、原型為null之Date等, A3)轉固定詞彙invalid data: must be a readable value, 亦走同一錯誤路徑(error事件恰一次後reject, data為null)
+            data = copyData(data)
 
             //check
             if (!isarr(data)) {
@@ -762,12 +894,12 @@ function WOrmLevel(opt = {}) {
             //check id
             data = procPk(data, 'insert')
 
-            //check Date, 複本內任何深度之Date年份須介於0000-9999, 範圍外整批reject(帳本R-DATE-01)
-            chkDataDate(data)
+            //check Date, 複本內任何深度之Date年份須介於0000-9999, 範圍外整批reject(帳本R-DATE-01); 讀取複本內存取器拋錯者轉固定詞彙(guardRead, A2)
+            guardRead(() => chkDataDate(data))
 
             //check well-formed, 主鍵(併入NUL)與資料之孤立代理字元, 須於任何讀取與寫入之前完成, 只用上方cloneDeep之複本;
             //置於Date檢核之後: 兩者並存時先報Date(既有行為與測試不變)
-            procWellFormed(data)
+            guardRead(() => procWellFormed(data))
 
             //waitOpen
             await waitOpen()
@@ -831,6 +963,11 @@ function WOrmLevel(opt = {}) {
         catch (err) {
             isErr = true
             res = outErr(err)
+
+            //error事件之data: 呼叫端給的值不可讀之拒絕(option或data不可讀、複製階段拋錯等)傳null(A4)
+            if (inErrs.has(err)) {
+                data = null
+            }
         }
 
         //update, 不能保證插入多少, 一律重設快取
@@ -871,7 +1008,7 @@ function WOrmLevel(opt = {}) {
      * 註: 數據內任何深度之Date年份須介於0000-9999，範圍外(如new Date(8.64e15))整批reject且不寫入任何一筆，規則同insert，詳見insert與README
      *
      * @memberOf WOrmLevel
-     * @param {Object|Array} data 輸入數據物件或陣列
+     * @param {Object|Array} data 輸入數據物件或陣列；各筆主鍵id未帶者依autoGenPk補值或整批reject，給了而非字串者整批reject(訊息invalid id: not a string at [data[k].id])，詳見類別說明
      * @returns {Promise} 回傳Promise，resolve回傳插入結果物件{n,nInserted,ok}，n為輸入筆數、nInserted成功時恆等於n，任一筆主鍵已存在則reject回傳錯誤訊息
      */
     async function insertBulkCore(data) {
@@ -884,8 +1021,8 @@ function WOrmLevel(opt = {}) {
             //check, 判定data與cloneDeep皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01); 輸入無效者直接回傳, 不經catch之後之收尾且不發事件
             if (!iseobj(data) && !isearr(data)) {
 
-                //probe, 判定為假時分辨「不可讀」與「輸入無效」(帳本R-PROBE-01; wsemi 1.9.69起iseobj、isearr對不可讀之值回false): 不可讀者拋原錯誤走錯誤路徑; 判定為真者不探針
-                probeReadable(data)
+                //probe, 判定為假時分辨「不可讀」與「輸入無效」(帳本R-PROBE-01; wsemi 1.9.69起iseobj、isearr對不可讀之值回false): 不可讀者拋固定詞彙走錯誤路徑; 判定為真者不探針
+                chkDataReadable(data)
 
                 return {
                     n: 0,
@@ -894,8 +1031,8 @@ function WOrmLevel(opt = {}) {
                 }
             }
 
-            //cloneDeep, 與外部數據脫勾, 其拋錯者(如原型為null之Date)亦走同一錯誤路徑(error事件恰一次後reject)
-            data = cloneDeep(data)
+            //copyData(cloneDeep), 與外部數據脫勾, 其拋錯者(巢狀不可讀值、原型為null之Date等, A3)轉固定詞彙, 亦走同一錯誤路徑(error事件恰一次後reject, data為null)
+            data = copyData(data)
 
             //check
             if (!isarr(data)) {
@@ -906,10 +1043,10 @@ function WOrmLevel(opt = {}) {
             data = procPk(data, 'insertBulk')
 
             //check Date, 複本內任何深度之Date年份須介於0000-9999, 範圍外整批reject(帳本R-DATE-01)
-            chkDataDate(data)
+            guardRead(() => chkDataDate(data))
 
             //check well-formed, 同insert(置於Date檢核之後)
-            procWellFormed(data)
+            guardRead(() => procWellFormed(data))
 
             //waitOpen
             await waitOpen()
@@ -953,6 +1090,11 @@ function WOrmLevel(opt = {}) {
         catch (err) {
             isErr = true
             res = outErr(err)
+
+            //error事件之data: 呼叫端給的值不可讀之拒絕傳null(A4)
+            if (inErrs.has(err)) {
+                data = null
+            }
         }
 
         //update, 不能保證插入多少, 一律重設快取
@@ -991,8 +1133,8 @@ function WOrmLevel(opt = {}) {
      * autoInsert為false而主鍵不存在(不會寫入)者亦先經同一檢核；合併與覆寫路徑寫入之Date皆來自已檢核之數據，已存在於資料庫之字串不檢核
      *
      * @memberOf WOrmLevel
-     * @param {Object|Array} data 輸入數據物件或陣列
-     * @param {Object} [option={}] 輸入設定物件，預設為{}
+     * @param {Object|Array} data 輸入數據物件或陣列；各筆主鍵id未帶者依autoGenPk補值或整批reject，給了而非字串者該筆ok為0並附err(訊息invalid id: not a string at [data[k].id])，詳見類別說明
+     * @param {Object} [option={}] 輸入設定物件，預設為{}；讀取即拋錯者(option本身不可讀，或成員為拋錯之存取器)整批reject(invalid option: must be a readable value、invalid option.autoInsert: must be a readable value)
      * @param {boolean} [option.autoInsert=true] 輸入是否於儲存時發現原本無數據，則自動改以插入處理，預設為true
      * @returns {Promise} 回傳Promise，resolve回傳與輸入等長之儲存結果陣列，各筆為{n,nInserted,nModified,ok}，n為主鍵命中筆數，單筆失敗者ok為0並附err，reject回傳錯誤訊息
      */
@@ -1006,17 +1148,17 @@ function WOrmLevel(opt = {}) {
             //check, 判定data、cloneDeep與讀取呼叫端傳入之option皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01); 輸入無效者直接回傳, 不經catch之後之收尾且不發事件
             if (!iseobj(data) && !isearr(data)) {
 
-                //probe, 判定為假時分辨「不可讀」與「輸入無效」(帳本R-PROBE-01; wsemi 1.9.69起iseobj、isearr對不可讀之值回false): 不可讀者拋原錯誤走錯誤路徑; 判定為真者不探針
-                probeReadable(data)
+                //probe, 判定為假時分辨「不可讀」與「輸入無效」(帳本R-PROBE-01; wsemi 1.9.69起iseobj、isearr對不可讀之值回false): 不可讀者拋固定詞彙走錯誤路徑; 判定為真者不探針
+                chkDataReadable(data)
 
                 return []
             }
 
-            //cloneDeep, 與外部數據脫勾, 其拋錯者(如原型為null之Date)亦走同一錯誤路徑(error事件恰一次後reject)
-            data = cloneDeep(data)
+            //copyData(cloneDeep), 與外部數據脫勾, 其拋錯者(巢狀不可讀值、原型為null之Date等, A3)轉固定詞彙, 亦走同一錯誤路徑(error事件恰一次後reject, data為null)
+            data = copyData(data)
 
-            //autoInsert
-            let autoInsert = get(option, 'autoInsert', true)
+            //autoInsert, option本身不可讀為invalid option: must be a readable value, 成員為拋錯之存取器為invalid option.autoInsert: must be a readable value(getOpt, A1、A2)
+            let autoInsert = getOpt(option, 'autoInsert', true)
 
             //check
             if (!isarr(data)) {
@@ -1027,13 +1169,13 @@ function WOrmLevel(opt = {}) {
             data = procPk(data, 'save')
 
             //check Date, 複本內任何深度之Date年份須介於0000-9999, 範圍外整批reject(帳本R-DATE-01); 合併與覆寫路徑之Date皆來自此複本
-            chkDataDate(data)
+            guardRead(() => chkDataDate(data))
 
             //msgs, 各筆主鍵(併入NUL)與資料之良構檢核結果(合格者為null), 於任何讀取與寫入之前完成, 只用上方cloneDeep之複本;
-            //save為逐筆函數, 不合格者僅該筆失敗(ok為0並附err), 同批其他筆照常處理
-            let msgs = map(data, function(v, k) {
+            //save為逐筆函數, 不合格者僅該筆失敗(ok為0並附err), 同批其他筆照常處理; 讀取複本內存取器拋錯者(guardRead)為整批性錯誤(固定詞彙)
+            let msgs = guardRead(() => map(data, function(v, k) {
                 return getWellFormedMsg(v, k)
-            })
+            }))
 
             //waitOpen
             await waitOpen()
@@ -1069,8 +1211,8 @@ function WOrmLevel(opt = {}) {
                         //vIn, 以merge(lodash)讀取v一次所得之純資料物件, 檢核之並以之合併: merge以keysIn取值, 會讀到繼承之可列舉存取器(類別實例之原型上),
                         //其每次讀取可回不同值, 上方對複本之檢核與此處合併所讀者未必相同, 故檢查之值即合併之值; 不合格者該筆ok為0(尚未排入ops)
                         //只檢核來自輸入者(vIn), 不檢核現值vv之既有內容: 舊資料之孤立代理字元不遷移(level之JSON值保真而留存), 不得使對該列之無關更新被拒
-                        let vIn = merge({}, v)
-                        let eIn = chkOrmData(vIn, { root: `data[${k}]` })
+                        let vIn = guardRead(() => merge({}, v))
+                        let eIn = guardRead(() => chkOrmData(vIn, { root: `data[${k}]` }))
                         if (eIn !== null) {
                             throw mkOwnErr(`invalid data: ${eIn.reason} at [${eIn.path}]`)
                         }
@@ -1158,6 +1300,11 @@ function WOrmLevel(opt = {}) {
         catch (err) {
             isErr = true
             res = outErr(err)
+
+            //error事件之data: 呼叫端給的值不可讀之拒絕傳null(A4)
+            if (inErrs.has(err)) {
+                data = null
+            }
         }
 
         //update, 不能保證變更多少, 一律重設快取
@@ -1226,14 +1373,14 @@ function WOrmLevel(opt = {}) {
             //check, 判定data與cloneDeep皆可能因輸入而拋錯, 故一律置於try內(帳本R-WRITE-ERR-01); 輸入無效者直接回傳, 不經catch之後之收尾且不發事件
             if (!iseobj(data) && !isearr(data)) {
 
-                //probe, 判定為假時分辨「不可讀」與「輸入無效」(帳本R-PROBE-01; wsemi 1.9.69起iseobj、isearr對不可讀之值回false): 不可讀者拋原錯誤走錯誤路徑; 判定為真者不探針
-                probeReadable(data)
+                //probe, 判定為假時分辨「不可讀」與「輸入無效」(帳本R-PROBE-01; wsemi 1.9.69起iseobj、isearr對不可讀之值回false): 不可讀者拋固定詞彙走錯誤路徑; 判定為真者不探針
+                chkDataReadable(data)
 
                 return []
             }
 
-            //cloneDeep, 與外部數據脫勾, 其拋錯者(如原型為null之Date)亦走同一錯誤路徑(error事件恰一次後reject)
-            data = cloneDeep(data)
+            //copyData(cloneDeep), 與外部數據脫勾, 其拋錯者(巢狀不可讀值、原型為null之Date等, A3)轉固定詞彙, 亦走同一錯誤路徑(error事件恰一次後reject, data為null)
+            data = copyData(data)
 
             //check
             if (!isarr(data)) {
@@ -1247,7 +1394,9 @@ function WOrmLevel(opt = {}) {
             //孤立代理字元之主鍵經UTF-8編碼後會改寫為U+FFFD而命中他筆
             let ids = []
             each(data, (v) => {
-                let id = get(v, 'id')
+
+                //id, 複本保留原型, 原型上之存取器id仍會執行呼叫端之程式, 拋錯者轉固定詞彙(guardRead, A2), 整批性錯誤
+                let id = guardRead(() => get(v, 'id'))
                 if (chkPk(id) === null) {
                     ids.push(id)
                 }
@@ -1265,8 +1414,8 @@ function WOrmLevel(opt = {}) {
 
                 try {
 
-                    //id
-                    let id = get(v, 'id')
+                    //id, 拋錯者轉固定詞彙(guardRead, A2), 由該筆之catch以ok為0回報
+                    let id = guardRead(() => get(v, 'id'))
 
                     //check, 主鍵之檢核(chkPk)
                     let msgPk = chkPk(id)
@@ -1339,6 +1488,11 @@ function WOrmLevel(opt = {}) {
         catch (err) {
             isErr = true
             res = outErr(err)
+
+            //error事件之data: 呼叫端給的值不可讀之拒絕傳null(A4)
+            if (inErrs.has(err)) {
+                data = null
+            }
         }
 
         //update, 不能保證刪除多少, 一律重設快取

@@ -50,6 +50,31 @@ Date：本套件以 JSON 存值，Date 存入後為 ISO 字串(`toISOString()`)�
 
 語意為 MongoDB 式：`{ f: null }` 命中 `f` 為 `null` 或缺欄之數據，`$ne: x`(x 非 `null`)與 `$nin` 亦命中欄位為 `null` 或缺欄之數據，`$ne: null` 則排除之。欄名同於 `Object.prototype` 成員者(`constructor`、`toString`、`hasOwnProperty` 等)，數據無此自有欄位時視為缺欄。欄位值為陣列時，純量與 `$in` 條件仍以元素比對(`{ tags: 'x' }` 命中 `tags: ['x', 'y']`)。欲在 `w-orm-*` 各後端得到相同結果，請明確寫出：排除 null/缺欄用 `{ $and: [{ f: { $ne: null } }, { f: { $ne: x } }] }`，含 null/缺欄用 `{ $or: [{ f: null }, { f: { $ne: x } }] }`。
 
+### 主鍵之未帶與給了 (Primary key given or not)
+
+w-orm 系列共同規則：主鍵 `id` 只有三種情形視為**未帶**：`undefined`、`null`、空字串(含鍵不存在)。其餘一律視為**給了**。
+
+- **未帶**：`autoGenPk` 為 `true`(預設)時自動產生主鍵；為 `false` 時整批 reject(`insert`、`insertBulk`、`save` 皆然，`save` 不降為逐筆)，訊息 `can not <入口> by data[<k>] without valid id when autoGenPk is false`。
+- **給了而非字串**(數字、布林、物件、陣列、`String` 包裝物件、`Symbol`、`BigInt` 等)：一律拒絕，**不補值、不替換為新產生之主鍵**(主鍵為資料之身分，給了錯值卻換成新主鍵寫入，事後無從對應)，訊息為固定詞彙 `invalid id: not a string at [data[<k>].id]`(不回顯值)。失敗通道依各入口既有者且**不隨 `autoGenPk` 改變**：
+
+| 入口 | 給了而非字串之處置 |
+|---|---|
+| `insert`、`insertBulk` | 整批 reject(`error` 事件於 reject 之前恰一次、不發 `change`、資料庫不變) |
+| `save` | 該筆 `ok: 0` 並附 `err`，同批其他筆照常 |
+| `del` | 該筆 `ok: 0` 並附 `err` |
+| `selectByPk` | 回傳 `null`(主鍵值無效視為查無數據) |
+
+- **讀取即拋錯**(已撤銷之 `Proxy`、`Symbol.toStringTag` 或陷阱拋錯者、拋錯之存取器等)之輸入：走各入口既有之失敗通道(寫入入口與 `selectByPk` 為 `error` 事件恰一次後 reject、資料庫不變；建構為同步 throw)，訊息一律為本套件之固定詞彙 `invalid <名稱>: must be a readable value`——不含拋出者之原訊息與值，亦不轉出呼叫端物件(存取器、`Proxy` 陷阱、巢狀值)拋出之文字。可讀而型別不符者行為不變(輸入無效早退、查無數據、選項採忽略並用預設)。名稱依拒絕之處：
+
+| 情形 | 名稱 | 通道 |
+|---|---|---|
+| 選項容器本身不可讀(`opt`／`option` 為已撤銷之 `Proxy`、`get` 陷阱或 `Symbol.toStringTag` 拋錯者，讀其成員即拋錯) | `opt`(建構)、`option`(`insert`、`save`) | 建構同步 throw；`insert`／`save` 為 `error` 事件恰一次後 reject |
+| 容器可讀而其成員之讀取拋錯(拋錯之存取器，或僅對該鍵拋錯之 `get` 陷阱)，或成員之值本身不可讀 | `opt.url`／`opt.db`／`opt.cl`／`opt.useCache`／`opt.autoGenPk`、`option.returnList`、`option.autoInsert`(後者僅讀取拋錯) | 同上 |
+| 資料不可讀，含複製階段遇到之巢狀不可讀值(資料內之 `id`、列之成員、陣列其後之元素、各欄為已撤銷之 `Proxy` 或拋錯之存取器、原型為 `null` 之 `Date`、過深之巢狀)、單元素陣列之 `[0]` 存取器拋錯、複本原型上拋錯之存取器(含 `id`)、補主鍵時指派拋錯之 setter；複製處不分辨頂層與巢狀 | `data` | `insert`、`insertBulk`、`save`、`del` 皆為 `error` 事件恰一次後整批 reject、資料庫不變 |
+| `selectByPk` 之 `pk` 不可讀(可讀而非字串者回 `null`) | `pk` | `error` 事件恰一次後 reject |
+
+  入口階段之拒絕(上表前三列)之 `error` 事件，其 `data` 引數為 `null`(不把不可讀之值或含其之複本交給訂閱函數)；已關閉之實例於入口先拒絕，`data` 為呼叫端傳入之原值，惟其型別標籤不可讀者為 `null`；入口階段之後之拒絕(主鍵衝突、`Date` 範圍外、主鍵檢核不合格等)之 `data` 仍為本次操作之數據複本。`opt.logDetail`、`opt.funLog` 由 `wsemi` 之 `getDiag` 處置(診斷出口永不失敗)，不經上述。
+
 ### 字串良構 (Well-formed strings)
 
 JavaScript 字串可含孤立代理字元(lone surrogate，即成對代理被拆開後只剩一半，如 `'a\uD800'`，`isWellFormed()` 為 `false`)。level 之鍵經 UTF-8 編碼，孤立代理字元被改寫為 U+FFFD，使 `'a\uD800'`、`'a\uDC00'` 與 `'a�'` 落到**同一個鍵**：`insert` 誤判主鍵已存在、`save` 覆蓋他筆、`del` 誤刪他筆、`selectByPk` 取到他筆。本套件因此於任何讀取與寫入之前拒收，檢核為 `wsemi` 之 `chkOrmStr`、`chkOrmData`(w-orm 系列共用，各後端規則一致)：
@@ -134,6 +159,9 @@ let wo2 = WOrm({ url: './_db', db: 'worm', cl: 'users', funLog: (label, safe, de
 - 診斷輸出預設變動：`change`／`error` 事件的訂閱函數拋錯時，原本 `console.log(拋出值)`(含錯誤訊息與堆疊，訊息可能夾帶資料值或主鍵)，現預設只輸出 `change handler threw { mode, errType }` 或 `error handler threw { mode, errType }`(`errType` 為拋出值的型別或錯誤類別名稱，另有機器代碼時列 `errCode`)；`logDetail`／`funLog` 的細節為遮罩拷貝(資料庫位置以 `***` 取代)。要取得含細節的輸出請於建構時加 `logDetail: true`，或以 `funLog(label, safe, detail)` 接收完整細節；回傳(`resolve`／`reject` 內容)、事件參數與發出時機不變。見上節「診斷輸出」。
 - 診斷輸出改用 `wsemi` 共用實作(本套件刪除自寫的 `src/getDiag.mjs`，不保留舊介面)，對外行為變化：① `logDetail: true` 的輸出由 `console.log(拋出值)`(單一引數、無標籤)改為 `console.log(標籤, 細節)`(兩個引數)，細節為遮罩拷貝；② `errType` 只列內建錯誤類別名，使用端自訂子類別(如 `class MyError extends Error {}`)改列為 `Error`(原列其建構子名稱)；③ `errCode` 只列 `wsemi` 明列的機器代碼(系統錯誤名稱、Node 常見代碼、`LEVEL_xxx`)，整數代碼(如 `4060`)與未明列的 `ERR_xxx`、純大寫字母字串(如 `ERIC`)不再列出(原以樣式放行)；④ 遮罩拷貝的 `Map`、`Set` 改為保持型別並遮罩其內容(原為 `[Object]` 標記)；`funLog` 回傳的一般 thenable 不再被呼叫 `then`(僅原生 promise 標記為已處理)。
 - 對外錯誤值遮罩憑證：外來錯誤(後端、使用端存取器或回呼拋出者)含連線網址帳密、`password=`／`token=` 鍵值對、`Bearer` 權杖等憑證時，`reject` 的值、`error` 事件的錯誤與訊息、逐筆 `err` 改為 `***` 取代後的內容(同類別副本；不含憑證者原物件不變)；不遮儲存路徑；本套件自身固定詞彙訊息不遮。見上節「對外錯誤值不含憑證」。受影響的下游：依賴上述外來錯誤原文含憑證的使用端(正常情形下不應有)。
+- 改為 reject(主鍵給了而非字串)：`insert`、`insertBulk`、`save` 收到 `id` 為數字、布林、物件、陣列、`String`／`Number`／`Boolean` 包裝物件、`Symbol`、`BigInt`、函數、`Date` 等**非字串**時，原本於 `autoGenPk: true`(預設)下被**靜默換成新產生之主鍵並寫入**(`wsemi` 1.9.69 起 `String` 包裝物件亦然)，現改為拒絕，訊息 `invalid id: not a string at [data[<k>].id]`：`insert`、`insertBulk` 整批 reject，`save` 該筆 `ok: 0` 並附 `err`；`autoGenPk: false` 下原本一律以 `can not <入口> by data[<k>] without valid id when autoGenPk is false` 整批 reject(含 `save`)，現給了而非字串者改為同上訊息與通道(`save` 改為逐筆 `ok: 0`)，未帶(`undefined`、`null`、空字串、鍵不存在)者訊息與整批通道不變。依賴「給了數字主鍵而由套件改配新主鍵」者須改為自行轉成字串，或不給 `id`。見上節「主鍵之未帶與給了」。
+- 改為固定詞彙(讀取即拋錯之輸入)：`data`、`option.returnList`、`opt.url`／`db`／`cl`／`useCache`／`autoGenPk`、`selectByPk` 之 `pk` 及經原型存取器讀出之 `id` 為讀取即拋錯之值(已撤銷之 `Proxy` 等)時，原本拋出或 reject 為該值之**原例外訊息**(如 `Cannot perform 'Object.prototype.toString' on a proxy that has been revoked`)，現改為固定詞彙 `invalid <名稱>: must be a readable value`(不含原例外文字)；失敗通道不變。單元素陣列之 `[0]` 存取器拋錯者仍視為不可讀，同改為固定詞彙。依賴原例外訊息文字者須改比對固定詞彙。
+- 改為固定詞彙(w-orm 系列全族對齊)：① 選項容器本身不可讀(`opt`／`option` 為已撤銷之 `Proxy`、`get` 陷阱拋錯者)，原本拋出或 reject 為**原例外訊息**，現為 `invalid opt: must be a readable value`(建構同步 throw)、`invalid option: must be a readable value`(`insert`、`save`)；② 存取器拋錯(`opt.<鍵>`、`option.returnList`、`option.autoInsert` 為拋錯之存取器，或複本內繼承之存取器、補主鍵時之 setter 拋錯)，原本轉出存取器**拋出之文字**，現為 `invalid opt.<名>`／`invalid option.<名>`／`invalid data: must be a readable value`；③ 複製階段之巢狀不可讀值(資料內之 `id`、列之成員、陣列其後之元素、各欄為已撤銷之 `Proxy` 或拋錯之存取器、原型為 `null` 之 `Date`、過深之巢狀)，原本 reject 之值為**拋出者本身**(其文字、型別皆隨使用端)，現為本套件之 `Error`，訊息 `invalid data: must be a readable value`；④ 上述入口階段拒絕之 `error` 事件，`data` 引數原為呼叫端傳入之原值或其複本，現為 `null`；已關閉之實例其型別標籤不可讀之 `data` 同為 `null`；⑤ 經原型存取器讀出之 `id` 不可讀者，名稱由 `data[<k>].id` 改為 `data`。失敗通道不變(寫入入口 `error` 事件恰一次後 reject、資料庫不變；建構同步 throw)；`del` 之 `id` 讀取拋錯原為整批 reject 並轉出原文字，現為整批 reject 之固定詞彙。依賴原例外文字、拋出者本身或 `error` 事件 `data` 為原值者須改。
 - 修正(主鍵為 `Object.prototype` 成員名)：主鍵為 `constructor`、`toString`、`valueOf`、`hasOwnProperty`、`__proto__` 等時，原本 `insert` 回 `{ n: 1, nInserted: 0, ok: 1 }` 而靜默不寫入，`insertBulk` 誤報 `can not insertBulk by existed id[...]`，`save` 回 `nModified: 1`(實為新增)，`del` 回 `nDeleted: 1`(實未刪除任何一列)；以 `__proto__` 為主鍵之紀錄其欄位名還會被誤認為其他主鍵(同批之後筆被判已存在，`save` 時以該欄位值為現值合併而寫入損毀之紀錄)；現主鍵存在與否以 `Map` 判定，與一般字串主鍵行為相同。
 
 ## Documentation

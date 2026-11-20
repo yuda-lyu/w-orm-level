@@ -11,7 +11,8 @@ import WOrm from '../src/WOrmLevel.mjs'
 
 //診斷輸出與遮罩之接線測試(帳本R-DIAG-01, 規格〈診斷輸出與遮罩〉D3、Q3、P1): 真LevelDB, 確認本套件之每個站點確實接上wsemi之共用實作
 //遮罩與摘要之形態測試在wsemi(共用語料_diagCases), 此處以語料之wire案經本套件之真實呼叫點重跑, 並測本套件自身之處置:
-//1. 含憑證之外來值(後端、使用端存取器與回呼拋出者): reject、error事件、逐筆err皆已遮(diag.err/diag.mask); 不含憑證者原物件交出(身分不變)
+//1. 含憑證之外來值(後端與回呼拋出者): reject、error事件、逐筆err皆已遮(diag.err/diag.mask); 不含憑證者原物件交出(身分不變);
+//   〔2026-11-20 第557項對齊輪A3: 使用端存取器於複製階段拋出者不再屬此, 一律本套件之固定詞彙invalid data: must be a readable value, 拋出者之值與憑證皆不外洩; 外來值之注入改用後端接縫withBackend〕
 //2. 套件自身以固定詞彙組成之reject原樣(即使回顯之使用端值形似憑證, 固定字串挖空可反推秘密, D3)
 //3. 儲存路徑: 診斷輸出(細節)遮, 對外錯誤值不遮(Q3)
 //4. 診斷出口level(stdout/stderr)
@@ -89,7 +90,7 @@ let OPS = [
     { op: 'delAll(全部)', mode: 'delAll', be: 'keys', run: (wo) => wo.delAll() },
 ]
 
-//mkBadData, 使用端數據: 欄位bad為存取器, 讀取時拋出mk()之值(cloneDeep讀取時觸發, 屬外來值)
+//mkBadData, 使用端數據: 欄位bad為存取器, 讀取時拋出mk()之值(cloneDeep讀取時觸發; 2026-11-20起複製階段之拋錯一律轉固定詞彙, 不再為外來值之注入點)
 let mkBadData = (mk) => {
     let d = { id: 'u1' }
     Object.defineProperty(d, 'bad', {
@@ -172,38 +173,46 @@ describe('api-diagwire', function() {
     })
 
 
-    describe('外來值(使用端存取器於寫入前處理中拋出)之整批reject與error事件', function() {
+    //2026-11-20(第557項對齊輪A3, 帳本R-ALIGN-01): 使用端存取器於複製階段(cloneDeep)拋出, 不再交出拋出者本身(或其遮罩副本), 一律為本套件之固定詞彙(own, 不經遮罩),
+    //拋出者之值與其中之憑證皆不外洩; 外來值(後端、訂閱函數)之遮罩見上下各節(後端接縫withBackend)
+    describe('使用端存取器於複製階段拋出(w-orm系列對齊口徑A3): 一律固定詞彙, 拋出者之值與憑證皆不外洩', function() {
+        const RD = 'invalid data: must be a readable value'
 
         for (let row of USER_OPS) {
-            it(`${row.op}: 存取器拋出含憑證之錯誤: reject值與error事件之訊息皆已遮罩, 且不寫入`, async function() {
+            it(`${row.op}: 存取器拋出含憑證之錯誤: reject值與error事件之訊息為固定詞彙, 完整文字不含憑證, 且不寫入`, async function() {
                 let { wo } = mkWo()
                 let evs = []
                 wo.on('error', (mode, data, msg) => evs.push([mode, msg]))
                 let e = await catchOf(row.run(wo, mkBadData(mkCredErr)))
                 assert.ok(e instanceof Error, String(e && e.resolved))
-                assert.strictEqual(e.message, MASKED)
+                assert.strictEqual(e.message, RD)
                 assert.ok(!dumpAll(e).includes(CRED))
-                assert.deepStrictEqual(evs, [[row.mode, MASKED]])
+                assert.deepStrictEqual(evs, [[row.mode, RD]])
                 assert.deepStrictEqual(await wo.select(), [])
                 await wo.close()
             })
 
-            it(`${row.op}: 存取器拋出不含憑證之錯誤: 原物件交出(身分不變)`, async function() {
+            it(`${row.op}: 存取器拋出不含憑證之錯誤: 亦為固定詞彙(不交出拋出者本身)`, async function() {
                 let { wo } = mkWo()
                 let thrown = new RangeError('plain failure')
                 let e = await catchOf(row.run(wo, mkBadData(() => thrown)))
-                assert.strictEqual(e, thrown)
+                assert.ok(e instanceof Error)
+                assert.notStrictEqual(e, thrown)
+                assert.strictEqual(e.message, RD)
                 await wo.close()
             })
         }
 
-        it('存取器拋出非Error之外來值(字串含憑證、不含憑證、物件): 含憑證之字串已遮, 其餘原值', async function() {
+        it('存取器拋出非Error之外來值(字串含憑證、不含憑證、物件): 一律固定詞彙之Error, 拋出者之值與憑證皆不外洩', async function() {
             let { wo } = mkWo()
             let obj = { code: 'X', note: 'n' }
-            let e1 = await catchOf(wo.insert(mkBadData(() => `connect postgres://alice:${CRED}@db.example.com:5432/app failed`)))
-            assert.strictEqual(e1, MASKED)
-            assert.strictEqual(await catchOf(wo.insert(mkBadData(() => 'plain text'))), 'plain text')
-            assert.strictEqual(await catchOf(wo.insert(mkBadData(() => obj))), obj)
+            for (let mk of [() => `connect postgres://alice:${CRED}@db.example.com:5432/app failed`, () => 'plain text', () => obj]) {
+                let e = await catchOf(wo.insert(mkBadData(mk)))
+                assert.ok(e instanceof Error)
+                assert.strictEqual(e.message, RD)
+                assert.ok(!dumpAll(e).includes(CRED))
+                assert.notStrictEqual(e, obj)
+            }
             await wo.close()
         })
 
@@ -232,31 +241,40 @@ describe('api-diagwire', function() {
             return o
         }
 
+        //2026-11-20(第557項對齊輪A2): 複本之後之讀取站(補主鍵、良構檢核、合併、del之id讀取)已經guardRead轉固定詞彙(RD), 其後之讀取(getKpValues、kp.has等)仍為外來值經遮罩(MASKED, 帳本R-ALIGN-01已知邊界①),
+        //故各limit之結果為RD或MASKED二者之一, 憑證恆不外洩; 各通道(整批/逐筆 × 固定詞彙/遮罩)至少有案例(非空轉)
+        const RD = 'invalid data: must be a readable value'
         for (let op of ['save', 'del']) {
-            it(`${op}: 逐筆處理中拋出含憑證之外來錯誤: 該筆ok為0且err已遮; 整批reject者亦已遮; 至少一個情形落入逐筆路徑(非空轉)`, async function() {
+            it(`${op}: 逐筆處理中拋出含憑證之外來錯誤: 結果恆為固定詞彙或已遮罩, 憑證不外洩; 該筆ok為0與整批reject之通道皆有案例(非空轉)`, async function() {
                 let { wo } = mkWo()
                 let errEvs = []
                 let chgRes = []
                 wo.on('error', (mode, data, msg) => errEvs.push([mode, msg]))
                 wo.on('change', (mode, data, res) => chgRes.push(JSON.stringify(res)))
-                let nItem = 0
-                let nBatch = 0
+                let cnt = { itemRd: 0, itemMasked: 0, batchRd: 0, batchMasked: 0 }
                 for (let limit = 2; limit <= 16; limit++) {
                     let r = await catchOf(wo[op]([mkCounted(limit)]))
                     if (!(r instanceof Error) && r.resolved[0].ok === 0) {
-                        nItem++
-                        assert.strictEqual(r.resolved[0].err, MASKED, `limit ${limit}`)
+                        let s = r.resolved[0].err
+                        assert.ok(s === RD || s === MASKED, `limit ${limit}: ${s}`)
+                        cnt[s === RD ? 'itemRd' : 'itemMasked']++
                     }
                     else if (r instanceof Error) {
-                        nBatch++
-                        assert.strictEqual(r.message, MASKED, `limit ${limit}`)
+                        assert.ok(r.message === RD || r.message === MASKED, `limit ${limit}: ${r.message}`)
+                        cnt[r.message === RD ? 'batchRd' : 'batchMasked']++
                     }
                 }
-                assert.ok(nItem >= 1, '須有情形落入逐筆處理')
-                assert.ok(nItem + nBatch >= 1)
-                assert.ok(errEvs.length >= nItem + nBatch)
+                assert.ok(cnt.itemRd + cnt.itemMasked >= 1, '須有情形落入逐筆處理')
+                if (op === 'save') {
+                    assert.ok(cnt.itemMasked >= 1, '逐筆err之外來值遮罩(outMsg)非空轉')
+                    assert.ok(cnt.batchRd >= 1, '整批性之固定詞彙(guardRead)非空轉')
+                }
+                else {
+                    assert.ok(cnt.itemRd >= 1, 'del之id讀取拋錯為該筆之固定詞彙(guardRead)非空轉')
+                }
+                assert.ok(errEvs.length >= cnt.itemRd + cnt.itemMasked + cnt.batchRd + cnt.batchMasked)
                 for (let [, msg] of errEvs) {
-                    assert.strictEqual(msg, MASKED)
+                    assert.ok(msg === RD || msg === MASKED, msg)
                 }
                 assert.ok(!chgRes.join('').includes(CRED))
                 await wo.close()
@@ -297,8 +315,8 @@ describe('api-diagwire', function() {
             assert.strictEqual(r2[0].err, MSG)
             assert.deepStrictEqual(errEvs, [['save', MSG], ['save', MSG]])
 
-            //非空轉: 同一段文字若為外來值(使用端存取器拋出)即被遮
-            let e = await catchOf(wo.save(mkBadData(() => new Error(MSG))))
+            //非空轉: 同一段文字若為外來值(後端接縫拋出)即被遮
+            let e = await withBackend('getMany', () => new Error(MSG), () => catchOf(wo.save({ id: 'a' })))
             assert.ok(e instanceof Error)
             assert.notStrictEqual(e.message, MSG)
             assert.ok(!e.message.includes('abc123456789'))
@@ -324,8 +342,8 @@ describe('api-diagwire', function() {
             assert.strictEqual(e.message, MSG)
             assert.deepStrictEqual(evs, [['insertBulk', MSG]])
 
-            //非空轉: 同一段文字由外來值拋出(使用端存取器)即被遮
-            let e2 = await catchOf(wo.insert(mkBadData(() => new Error(MSG))))
+            //非空轉: 同一段文字由外來值拋出(後端接縫)即被遮
+            let e2 = await withBackend('getMany', () => new Error(MSG), () => catchOf(wo.insert({ id: 'a' })))
             assert.ok(e2 instanceof Error)
             assert.notStrictEqual(e2.message, MSG)
             assert.ok(!e2.message.includes('abc123456789'))
@@ -390,7 +408,7 @@ describe('api-diagwire', function() {
         it('外來字串reject含儲存位址: 原樣(對外不遮)', async function() {
             let { wo, storage } = mkWo()
             let s = `failed at ${storage}`
-            let e = await catchOf(wo.insert(mkBadData(() => s)))
+            let e = await withBackend('getMany', () => s, () => catchOf(wo.insert({ id: 'a' })))
             assert.strictEqual(e, s)
             await wo.close()
         })
@@ -504,13 +522,13 @@ describe('api-diagwire', function() {
         }
 
         for (let id of REJECT) {
-            it(`${id}(${byId(id).label}): 使用端存取器拋出語料之值, reject值符語料期望`, async function() {
+            it(`${id}(${byId(id).label}): 後端接縫(getMany)拋出語料之值, reject值符語料期望`, async function() {
                 let c = byId(id)
                 let { wo, url } = mkWo()
                 let ctx = mkCtx({})
                 ctx.sec.password = `${url}/worm/users`
                 let thrown = c.make(ctx)
-                let got = await catchOf(wo.insert(mkBadData(() => thrown)))
+                let got = await withBackend('getMany', () => thrown, () => catchOf(wo.insert({ id: 'a' })))
                 if (id === 'R01') {
                     assert.strictEqual(c.expect.check([thrown, got], ctx), true)
                 }
@@ -526,7 +544,7 @@ describe('api-diagwire', function() {
         it('T03(語料「網址帳密scheme://u:p@host(未登錄)」)的輸入作為外來字串reject: 期望值取自語料', async function() {
             let c = byId('T03')
             let { wo } = mkWo()
-            let got = await catchOf(wo.insert(mkBadData(() => 'connect mysql://alice:s3cr3t@host:3306/db')))
+            let got = await withBackend('getMany', () => 'connect mysql://alice:s3cr3t@host:3306/db', () => catchOf(wo.insert({ id: 'a' })))
             assert.strictEqual(c.expect.check(got), true)
             await wo.close()
         })

@@ -96,4 +96,42 @@ let arrRevoked = () => {
 }
 
 
-export { proxyRevoked, proxyTagThrows, proxyOwnKeysThrows, proxyGopdThrows, proxyProtoThrows, protoChainOwnKeysThrows, symbolOnlyGopdThrows, arr1Getter, arrLenThrows, arrRevoked }
+//proxyGetThrows, get陷阱對任何鍵(含Symbol.toStringTag)皆拋錯(型別標籤不可讀; 讀其任何成員即拋錯)
+let proxyGetThrows = () => {
+    return new Proxy({ id: 'z1' }, {
+        get() {
+            throw new Error('get-all-boom')
+        },
+    })
+}
+
+//proxyGetKeyThrows, get陷阱僅對指定鍵拋錯(型別標籤可讀, 即容器可讀而該成員之讀取拋錯)
+let proxyGetKeyThrows = (key) => {
+    return () => {
+        return new Proxy({ id: 'z1' }, {
+            get(t, k) {
+                if (k === key) {
+                    throw new Error('get-key-boom')
+                }
+                return t[k]
+            },
+        })
+    }
+}
+
+//objGetterThrows, 一般物件, 指定鍵為拋錯之自有存取器(容器可讀而成員為拋錯之getter)
+let objGetterThrows = (key) => {
+    return () => {
+        let o = { a: 1 }
+        Object.defineProperty(o, key, {
+            get() {
+                throw new Error('acc-boom')
+            },
+            enumerable: true,
+        })
+        return o
+    }
+}
+
+
+export { proxyRevoked, proxyTagThrows, proxyOwnKeysThrows, proxyGopdThrows, proxyProtoThrows, protoChainOwnKeysThrows, symbolOnlyGopdThrows, arr1Getter, arrLenThrows, arrRevoked, proxyGetThrows, proxyGetKeyThrows, objGetterThrows }
