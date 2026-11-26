@@ -52,7 +52,8 @@ let protoChainOwnKeysThrows = () => {
     return Object.setPrototypeOf({ id: 'z1', a: 1 }, proxyOwnKeysThrows())
 }
 
-//symbolOnlyGopdThrows, 自有鍵只有Symbol鍵且getOwnPropertyDescriptor陷阱拋錯(for...in只處理字串鍵, 故為可讀: 修前之iseobj為假而早退, 不拋錯)
+//symbolOnlyGopdThrows, 自有鍵只有Symbol鍵且getOwnPropertyDescriptor陷阱拋錯(iseobj之for...in只處理字串鍵, 不讀該描述子而回false, 不拋錯;
+//wsemi 1.9.79起chkReadable之opt.ownKeys一併讀Symbol鍵之描述子, 故此值為不可讀[keys are unreadable]; 1.9.78以前之chkReadable只讀字串鍵之描述子, 此值曾為可讀而型別不符)
 let symbolOnlyGopdThrows = () => {
     return new Proxy({}, {
         ownKeys() {
@@ -62,6 +63,11 @@ let symbolOnlyGopdThrows = () => {
             throw new Error('gopd-sym-boom')
         },
     })
+}
+
+//symbolOnlyReadable, symbolOnlyGopdThrows之對照: 自有鍵同為只有Symbol鍵, 但各陷阱皆透明、描述子可讀(iseobj為假, chkReadable為可讀, 為輸入無效而非不可讀)
+let symbolOnlyReadable = () => {
+    return new Proxy({ [Symbol.for('s')]: 1 }, {})
 }
 
 //arr1Getter, 單元素陣列且[0]之存取器拋錯(isearr只在length為1時讀v[0])
@@ -134,4 +140,4 @@ let objGetterThrows = (key) => {
 }
 
 
-export { proxyRevoked, proxyTagThrows, proxyOwnKeysThrows, proxyGopdThrows, proxyProtoThrows, protoChainOwnKeysThrows, symbolOnlyGopdThrows, arr1Getter, arrLenThrows, arrRevoked, proxyGetThrows, proxyGetKeyThrows, objGetterThrows }
+export { proxyRevoked, proxyTagThrows, proxyOwnKeysThrows, proxyGopdThrows, proxyProtoThrows, protoChainOwnKeysThrows, symbolOnlyGopdThrows, symbolOnlyReadable, arr1Getter, arrLenThrows, arrRevoked, proxyGetThrows, proxyGetKeyThrows, objGetterThrows }

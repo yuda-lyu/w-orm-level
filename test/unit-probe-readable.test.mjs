@@ -6,7 +6,7 @@ import iseobj from 'wsemi/src/iseobj.mjs'
 import cloneDeep from 'lodash-es/cloneDeep.js'
 import WOrm from '../src/WOrmLevel.mjs'
 import { mkObserver } from './lib/mkObserver.mjs'
-import { arr1Getter, proxyOwnKeysThrows, proxyTagThrows, proxyRevoked, proxyGopdThrows, proxyProtoThrows, protoChainOwnKeysThrows, symbolOnlyGopdThrows, arrLenThrows, arrRevoked } from './lib/hostile.mjs'
+import { arr1Getter, proxyOwnKeysThrows, proxyTagThrows, proxyRevoked, proxyGopdThrows, proxyProtoThrows, protoChainOwnKeysThrows, symbolOnlyGopdThrows, symbolOnlyReadable, arrLenThrows, arrRevoked } from './lib/hostile.mjs'
 
 
 //呼叫端給的值之可讀性(帳本R-PROBE-01; 2026-11-20起改用wsemi之chkReadable, 刪除本地之src/probeReadable.mjs): wsemi 1.9.69起判斷函數(isestr、isbol、iseobj、isearr等)對讀取即拋錯之值
@@ -14,7 +14,8 @@ import { arr1Getter, proxyOwnKeysThrows, proxyTagThrows, proxyRevoked, proxyGopd
 //  1. 站點之判斷函數回false時以chkReadable分辨[不可讀]與[可讀而型別不符], 不可讀者走該站點之原失敗通道: 寫入入口(寫入方法之data、option.returnList與經原型存取器讀出之id)與selectByPk(pk)為error事件恰一次且先於reject、
 //     不發change、資料庫不變、其後之佇列照常; 建構層(opt.url、db、cl、useCache、autoGenPk)為同步throw、不建立資料夾
 //  2. 訊息為固定詞彙invalid <名稱>: must be a readable value(V19), 不含原例外文字(V20): 名稱為opt、opt.url、opt.db、opt.cl、opt.useCache、opt.autoGenPk、option、option.returnList、option.autoInsert、pk、data(經原型存取器讀出之id同名稱data; 2026-11-20 oro557b2起, 原data[k].id改為data)
-//  3. 可讀而型別不符者行為不變: data走輸入無效早退(n:0或[]), pk回null, returnList、useCache、autoGenPk、db、cl採忽略(預設);透明之Proxy為可讀; 僅Symbol鍵之Proxy(for...in不處理Symbol鍵)為可讀
+//  3. 可讀而型別不符者行為不變: data走輸入無效早退(n:0或[]), pk回null, returnList、useCache、autoGenPk、db、cl採忽略(預設);透明之Proxy為可讀; 僅Symbol鍵而描述子可讀之Proxy為可讀(輸入無效)
+//     (wsemi 1.9.79起chkReadable之opt.ownKeys一併讀Symbol鍵之描述子: 僅Symbol鍵而getOwnPropertyDescriptor陷阱拋錯之Proxy改為不可讀, 歸規則1, 見data站點之敵意值表; 1.9.78以前只讀字串鍵之描述子而為可讀)
 //  4. chkReadable不呼叫存取器: 單元素陣列之[0]存取器(isearr唯一依賴元素值之情形)由呼叫端於try內自讀; 判斷函數回true(有效輸入)時不探測, 不增加其讀取次數
 //  5. 內部值(cloneDeep之複本之自有欄位、資料庫讀出值、錯誤物件之message)不探測; 惟複本保留原型, 經原型存取器讀出之id仍屬呼叫端給的值(procPk站點)
 //寫入方法之data站點(insert、insertBulk、save、del)之敵意輸入案見unit-write-pre-error; 主鍵之未帶與給了而非字串見unit-pk-given
@@ -291,6 +292,9 @@ describe('probe-readable', function() {
             { key: 'one-element array whose [0] getter throws (read by the caller inside try)', mk: arr1Getter },
             { key: 'array Proxy whose length read throws', mk: arrLenThrows },
             { key: 'revoked array Proxy', mk: arrRevoked },
+
+            //wsemi 1.9.79起chkReadable之opt.ownKeys一併讀Symbol鍵之描述子(第559項⑤): 該Proxy之getOwnPropertyDescriptor陷阱拋錯而為不可讀(舊讀法只讀字串鍵之描述子, 曾判為可讀而早退)
+            { key: 'Proxy with only Symbol keys whose getOwnPropertyDescriptor throws (chkReadable ownKeys reads Symbol-key descriptors, wsemi >= 1.9.79)', mk: symbolOnlyGopdThrows },
         ]
         let readableWrong = [
             { key: 'number 5', mk: () => 5 },
@@ -300,7 +304,7 @@ describe('probe-readable', function() {
             { key: 'undefined', mk: () => undefined },
             { key: 'empty array', mk: () => [] },
             { key: 'empty object', mk: () => ({}) },
-            { key: 'Proxy with only Symbol keys whose getOwnPropertyDescriptor throws (for...in ignores Symbol keys)', mk: symbolOnlyGopdThrows },
+            { key: 'transparent Proxy with only a Symbol key (descriptor readable: counterpart of the unreadable Symbol-key Proxy above)', mk: symbolOnlyReadable },
 
             //標籤非[object Object]者不列鍵(iseobj之for...in唯標籤為Object時讀鍵): ownKeys陷阱拋錯之空陣列Proxy為輸入無效而非不可讀(同本地探針時之範圍), 大型二進位不配置鍵
             { key: 'empty array Proxy whose ownKeys throws (array tag: keys are never listed)', mk: proxyEmptyArrOwnKeysThrows },
@@ -378,10 +382,10 @@ describe('probe-readable', function() {
             assert.deepStrictEqual(out.val, { n: 0, nInserted: 0, ok: 1 })
             assert.strict.equal(out.evs.length, 0)
         })
-        it('insert: a Proxy with only Symbol keys whose getOwnPropertyDescriptor throws is readable (for...in ignores Symbol keys): invalid input, early return n:0, no events [rule 3]', async function() {
+        it('insert: a transparent Proxy with only a Symbol key (descriptor readable) is readable: invalid input, early return n:0, no events [rule 3]', async function() {
             let wo = mk('proxy-symbol-only')
             let ob = mkObserver(wo)
-            let out = await ob.run(() => wo.insert(symbolOnlyGopdThrows()))
+            let out = await ob.run(() => wo.insert(symbolOnlyReadable()))
             assert.strict.equal(out.ok, true)
             assert.deepStrictEqual(out.val, { n: 0, nInserted: 0, ok: 1 })
             assert.strict.equal(out.evs.length, 0)
