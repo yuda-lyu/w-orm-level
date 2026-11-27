@@ -1,11 +1,11 @@
 {
   "name": "w-orm-level",
-  "version": "1.0.81",
+  "version": "1.0.82",
   "main": "dist/w-orm-level.umd.js",
   "dependencies": {
     "level": "^10.0.0",
     "mingo": "^7.2.7",
-    "wsemi": "^1.9.82"
+    "wsemi": "^1.9.83"
   },
   "devDependencies": {
     "w-package-tools": "^1.1.32"
